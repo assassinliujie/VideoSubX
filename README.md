@@ -4,6 +4,26 @@ VideoSubX 是一个基于 [VideoLingo](https://github.com/Huanshere/VideoLingo) 
 
 本项目遵循 [Apache 2.0](LICENSE) 许可证。
 
+## ⚠️ 首次使用必读
+
+> [!IMPORTANT]
+> **网络代理要求**
+> - 首次使用时会自动下载 ASR 模型（Whisper）和人声分离模型，**请开启系统代理**
+> - 首次切换到新语言的视频时，会自动下载对应的 NLP 模型（如 `ja_core_news_md`），**也请确保系统代理开启**
+> - 如遇视频下载卡住，请检查代理设置或手动配置 `config.yaml` 中的 `proxy` 字段
+
+> [!WARNING]
+> **启动脚本配置**
+> - `run_webui.bat` 中写死了 Conda 环境名称为 `videosubx`
+> - 请确保 **Conda 已添加到系统 PATH**，且环境名称与脚本中一致
+> - 如需修改环境名称，请编辑 `run_webui.bat` 文件
+
+> [!CAUTION]
+> **NumPy 版本问题**
+> - 存在未知 Bug 可能导致 `install.py` 中的 NumPy 版本覆盖失效
+> - 如遇到 NumPy 相关报错，请手动在对应conda环境里确认 NumPy 版本：`pip show numpy`
+> - 推荐版本：`numpy=1.26.4`
+
 ## 项目核心变更与重构说明
 
 本项目为了解决原项目在生产环境中的稳定性与精度问题，进行了一部分重写：
