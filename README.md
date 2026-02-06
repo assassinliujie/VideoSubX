@@ -1,7 +1,9 @@
 # VideoSubX
 
 VideoSubX 是一个基于 [VideoLingo](https://github.com/Huanshere/VideoLingo) 深度重构的自动化视频字幕翻译工具。
+
 部署教程：https://www.bilibili.com/video/BV1FnFhzgERG
+
 本项目遵循 [Apache 2.0](LICENSE) 许可证。
 #### 重要提示：install.py是基于50系以下设备使用的安装脚本，50系请自行安装最新cuda cudnn，torch，理论上已经去除了强制要求老版本的decumus，AMD 9000系也曾经正常跑通过，自行尝试
 50系已有用户安装最新cuda和torch后成功运行
@@ -45,7 +47,9 @@ VideoSubX 是一个基于 [VideoLingo](https://github.com/Huanshere/VideoLingo) 
 ### 功能介绍
 
 MFA https://github.com/MontrealCorpusTools/Montreal-Forced-Aligner 是一个声学强制对齐工具。启用后可以**修复部分词语起始时间戳晚于说话人一个音节才开始的问题**，让字幕时间轴更加精准。
+
 启用前：<img width="356" height="191" alt="图片" src="https://github.com/user-attachments/assets/ec93ee5f-455b-4ccf-b099-66305bb80a08" />
+
 启用后：<img width="387" height="194" alt="图片" src="https://github.com/user-attachments/assets/83ee5946-0416-45cb-acdd-2a5c706f8a06" />
 单词起始时间明显修复
 ### 安装方法
