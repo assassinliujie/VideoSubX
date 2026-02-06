@@ -86,10 +86,10 @@ def transcribe_audio_stable(vocal_audio_file, start, end):
         regroup=False,  # 禁用自动重组，保持更长的句子
         vad=True,       # 启用VAD辅助定位，修复句尾时间戳漂移
         vad_threshold=0.35, # 恢复默认 VAD 阈值
-        min_word_dur=0.3,   # 恢复默认
+        min_word_dur=0.1,   # 恢复默认
         suppress_silence=True,  # 显式开启静音抑制
-        only_voice_freq=True,   # [New] 只保留人声频率(200-5000Hz)，过滤底噪
-        use_word_position=False # [New] 不使用词位置调整，防止首词时间戳向前拉伸
+        only_voice_freq=True,   # 只保留人声频率(200-5000Hz)，过滤底噪
+        use_word_position=True #  恢复默认
     )
     
     #rprint("[cyan]🔧 Refining timestamps...[/cyan]")
