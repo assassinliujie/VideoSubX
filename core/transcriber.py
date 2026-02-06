@@ -1,61 +1,67 @@
 import os
-from core.utils import *
+
+from core.asr_backend.audio_preprocess import (
+    convert_video_to_audio,
+    normalize_audio_volume,
+    process_transcription,
+    save_results,
+    split_audio,
+)
 from core.asr_backend.audio_separator import separate_audio
-from core.asr_backend.audio_preprocess import process_transcription, convert_video_to_audio, split_audio, save_results, normalize_audio_volume
 from core.downloader import find_video_files
+from core.utils import *
 from core.utils.paths import *
+
 
 @check_file_exists(_2_CLEANED_CHUNKS)
 def transcribe():
-    # 1. 检查是否需要提取音频（如果 vocal.mp3 已存在则跳过）
+    # 1) Ensure source audio exists
     if not os.path.exists(_VOCAL_AUDIO_FILE):
         video_file = find_video_files()
         convert_video_to_audio(video_file)
-    
-    # 2. 音频分离（人声/背景）:
-    if load_key("demucs"):
-        separate_audio()
-        vocal_audio = normalize_audio_volume(_VOCAL_AUDIO_FILE, _VOCAL_AUDIO_FILE, format="mp3")
-    else:
-        # 如果没开 demucs 但 vocal 存在，直接用 vocal
-        if os.path.exists(_VOCAL_AUDIO_FILE):
-            vocal_audio = _VOCAL_AUDIO_FILE
-        else:
-            vocal_audio = _VOCAL_AUDIO_FILE
 
-    # 3. 用人声文件检测语音边界（避免片头背景音乐干扰）
+    # 2) Always use audio-separator and then normalize vocals
+    separate_audio()
+    vocal_audio = normalize_audio_volume(_VOCAL_AUDIO_FILE, _VOCAL_AUDIO_FILE, format="mp3")
+
+    # 3) Split vocal track into ASR segments
     segments = split_audio(vocal_audio)
-    
-    # 4. 转录音频片段
-    all_results = []
+
     runtime = load_key("whisper.runtime")
     if runtime != "stable":
         raise ValueError(f"Unsupported ASR runtime: {runtime}. Only 'stable' is supported.")
-    
-    from core.asr_backend.stable_ts import transcribe_audio_stable as ts
-    rprint("[cyan]🎤 Transcribing audio with stable-ts...[/cyan]")
 
-    for start, end in segments:
-        # 只使用 vocal_audio 进行 ASR，不再传 raw
-        result = ts(vocal_audio, start, end)
-        all_results.append(result)
-    
-    # 5. 合并结果
-    combined_result = {'segments': []}
+    from core.asr_backend.stable_ts import release_model, transcribe_audio_stable
+
+    rprint("[cyan]Transcribing audio with stable-ts...[/cyan]")
+
+    # 4) Reuse loaded stable-ts model across all segments, then release once
+    all_results = []
+    try:
+        for start, end in segments:
+            result = transcribe_audio_stable(vocal_audio, start, end)
+            all_results.append(result)
+    finally:
+        release_model()
+
+    # 5) Merge segment-level ASR outputs
+    combined_result = {"segments": []}
     for result in all_results:
-        combined_result['segments'].extend(result['segments'])
-    
-    # 6. 处理数据
+        combined_result["segments"].extend(result["segments"])
+
+    # 6) Post-process transcription
     df = process_transcription(combined_result)
-    
-    # 7. 可选：MFA 强制对齐优化时间轴（实验性功能）
+
+    # 7) Optional MFA forced alignment
     if load_key("mfa.enabled"):
         from core.asr_backend.mfa_aligner import align_transcription
-        rprint("[cyan]🔧 [实验性] 启用 MFA 时间轴优化...[/cyan]")
+
+        rprint("[cyan][Experimental] Running MFA alignment...[/cyan]")
         df = align_transcription(df, vocal_audio)
-    
-    # 8. 保存结果
+
+    # 8) Save cleaned chunks
     save_results(df)
-        
+
+
 if __name__ == "__main__":
     transcribe()

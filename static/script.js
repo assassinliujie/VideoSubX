@@ -142,7 +142,8 @@ const TASK_STATUS_MAP = {
     "pending": "等待中",
     "running": "运行中",
     "completed": "已完成",
-    "error": "错误"
+    "error": "错误",
+    "stopped": "已停止"
 };
 
 async function updateStatus() {

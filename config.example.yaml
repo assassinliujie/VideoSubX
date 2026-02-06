@@ -16,8 +16,6 @@ max_workers: 4
 target_language: '简体中文'
 
 # 是否在转录前使用人声分离
-demucs: true
-
 # audio-separator 配置
 audio_separator:
   # 推荐模型：

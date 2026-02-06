@@ -27,8 +27,7 @@ def audio_separator_separate():
         from audio_separator.separator import Separator
     except ImportError:
         raise ImportError(
-            "audio-separator 未安装！请运行: pip install audio-separator[gpu]\n"
-            "或者将 config.yaml 中的 audio_separator_backend 改为 'demucs'"
+            "audio-separator 未安装！请运行: pip install audio-separator[gpu]"
         )
     
     # 获取配置

@@ -1,37 +1,103 @@
-import threading
-import time
+import fnmatch
 import os
 import shutil
 import sys
+import threading
 from datetime import datetime
-from backend.global_state import state, TaskStatus
-import core.utils as utils
 
-# 如果 core 不在 sys.path 中则添加（通常在 main.py 中处理，但这里也安全处理）
+from backend.global_state import state, TaskStatus
+
+# Ensure project root is on sys.path
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-# 导入核心模块
-from core import downloader, transcriber, splitter_nlp, splitter_meaning, summarizer, translator, subtitle_splitter, subtitle_generator, subtitle_burner
+from core import (
+    downloader,
+    transcriber,
+    splitter_nlp,
+    splitter_meaning,
+    summarizer,
+    translator,
+    subtitle_splitter,
+    subtitle_generator,
+    subtitle_burner,
+)
+
 
 class TaskManager:
     def __init__(self):
         self.workflow_thread = None
+        self.worker_threads = []
         self.stop_flag = threading.Event()
+        self.local_video_filename = None
+
+    def set_local_video(self, filename: str):
+        self.local_video_filename = os.path.basename(filename)
+
+    def get_local_video_path(self):
+        if not self.local_video_filename:
+            return None
+        path = os.path.join("output", self.local_video_filename)
+        return path if os.path.exists(path) else None
+
+    def _force_stop_threads(self):
+        import ctypes
+
+        def _raise_system_exit(thread_obj):
+            if not thread_obj or not thread_obj.is_alive() or thread_obj.ident is None:
+                return False
+            tid = ctypes.c_ulong(thread_obj.ident)
+            result = ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, ctypes.py_object(SystemExit))
+            if result == 0:
+                return False
+            if result > 1:
+                ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, None)
+                return False
+            return True
+
+        targets = []
+        if self.workflow_thread and self.workflow_thread.is_alive():
+            targets.append(self.workflow_thread)
+        targets.extend([t for t in self.worker_threads if t and t.is_alive()])
+
+        killed = 0
+        for thread_obj in targets:
+            if _raise_system_exit(thread_obj):
+                killed += 1
+
+        self.worker_threads = []
+        return killed
+
+    def _cleanup_download_temp_files(self):
+        output_dir = "output"
+        if not os.path.exists(output_dir):
+            return
+
+        removed = 0
+        for root, _, files in os.walk(output_dir):
+            for filename in files:
+                if fnmatch.fnmatch(filename, "*.part") or fnmatch.fnmatch(filename, "*.ytdl"):
+                    file_path = os.path.join(root, filename)
+                    try:
+                        os.remove(file_path)
+                        removed += 1
+                    except Exception as e:
+                        state.add_log(f"Failed to remove temp file {file_path}: {e}")
+
+        if removed > 0:
+            state.add_log(f"Removed {removed} temporary download files (*.part/*.ytdl).")
 
     def start_workflow(self, url: str):
         if self.workflow_thread and self.workflow_thread.is_alive():
             state.add_log("Workflow already running.")
             return
 
-        # 自动归档并重置
         state.add_log("Auto-archiving previous run...")
         self.reset_workspace()
 
         self.stop_flag.clear()
-        
-        # 启动主编排线程
+
         self.workflow_thread = threading.Thread(target=self._workflow_runner, args=(url,))
         self.workflow_thread.daemon = True
         self.workflow_thread.start()
@@ -39,68 +105,78 @@ class TaskManager:
 
     def stop_workflow(self):
         self.stop_flag.set()
+        killed = self._force_stop_threads()
+        self._cleanup_download_temp_files()
+
+        for task in state.tasks.values():
+            if task["status"] == "running":
+                task["status"] = "stopped"
+
         state.set_status(TaskStatus.IDLE)
-        state.add_log("Workflow stop requested.")
+        if killed > 0:
+            state.add_log("Workflow force stop requested.")
+        else:
+            state.add_log("Stop requested. Waiting for blocking step to exit.")
 
     def _workflow_runner(self, url):
         try:
-            # 步骤 1: 下载 360p
+            # Step 1: download low-res file for ASR
             state.set_status(TaskStatus.DOWNLOADING_360P)
             state.update_task_status("download_360p", "running")
             state.add_log("Step 1: Downloading 360p video for audio extraction...")
-            
-            downloader.download_video_ytdlp(url, resolution='360')
-            
+
+            downloader.download_video_ytdlp(url, resolution="360")
+
             state.update_task_status("download_360p", "completed")
             state.add_log("360p download complete.")
 
-            if self.stop_flag.is_set(): return
+            if self.stop_flag.is_set():
+                return
 
-            # 步骤 2: 并行任务
+            # Step 2: process + best download in parallel
             state.set_status(TaskStatus.PROCESSING)
-            
-            # 任务 A: 处理
+
             def run_processing():
                 state.update_task_status("process_transcription", "running")
                 try:
                     state.add_log("Task A: Starting Audio/Subtitle Processing...")
-                    
+
                     state.add_log("Running Whisper ASR...")
                     transcriber.transcribe()
-                    
+
                     state.add_log("Splitting sentences (NLP)...")
                     splitter_nlp.split_by_spacy()
-                    
+
                     state.add_log("Splitting sentences (Meaning)...")
                     splitter_meaning.split_sentences_by_meaning()
-                    
+
                     state.add_log("Summarizing...")
                     summarizer.get_summary()
-                    
+
                     state.add_log("Translating...")
                     translator.translate_all()
-                    
+
                     state.add_log("Splitting for subtitles...")
                     subtitle_splitter.split_for_sub_main()
-                    
+
                     state.add_log("Aligning timestamps...")
                     subtitle_generator.align_timestamp_main()
-                    
+
                     state.update_task_status("process_transcription", "completed")
                     state.add_log("Task A: Processing pipeline completed successfully.")
                 except Exception as e:
                     state.add_log(f"Task A Failed: {str(e)}")
                     state.update_task_status("process_transcription", "error")
-                    state.status = TaskStatus.ERROR
+                    state.set_status(TaskStatus.ERROR)
                     import traceback
-                    print(traceback.format_exc())
 
-            # 任务 B: 下载最佳质量
+                    state.add_log(traceback.format_exc())
+
             def run_download_best():
                 state.update_task_status("download_best", "running")
                 try:
                     state.add_log("Task B: Downloading Best Quality Video...")
-                    downloader.download_video_ytdlp(url, resolution='best', suffix='_best')
+                    downloader.download_video_ytdlp(url, resolution="best", suffix="_best")
                     state.update_task_status("download_best", "completed")
                     state.add_log("Task B: Best quality download complete.")
                 except Exception as e:
@@ -109,12 +185,17 @@ class TaskManager:
 
             thread_a = threading.Thread(target=run_processing, name="_task_processing")
             thread_b = threading.Thread(target=run_download_best, name="_task_download_best")
-            
+            self.worker_threads = [thread_a, thread_b]
+
             thread_a.start()
             thread_b.start()
-            
+
             thread_a.join()
             thread_b.join()
+
+            if self.stop_flag.is_set():
+                state.add_log("Workflow stopped.")
+                return
 
             if state.status != TaskStatus.ERROR:
                 state.set_status(TaskStatus.COMPLETED)
@@ -124,146 +205,153 @@ class TaskManager:
             state.set_status(TaskStatus.ERROR)
             state.add_log(f"Workflow Critical Error: {str(e)}")
             import traceback
-            state.add_log(traceback.format_exc())
 
-    def start_local_workflow(self):
-        """使用本地上传的视频/音频开始工作流，跳过下载步骤"""
+            state.add_log(traceback.format_exc())
+        finally:
+            self.worker_threads = []
+
+    def start_local_workflow(self, local_video_filename=None):
+        """Use uploaded local video/audio file and skip download steps."""
         if self.workflow_thread and self.workflow_thread.is_alive():
             state.add_log("Workflow already running.")
             return
 
-        # 自动归档并重置
+        if local_video_filename:
+            self.local_video_filename = os.path.basename(local_video_filename)
+
+        preserve_files = [self.local_video_filename] if self.local_video_filename else None
+
         state.add_log("Auto-archiving previous run...")
-        self.reset_workspace(skip_output_clean=True)  # 不清理 output，因为用户刚上传了文件
+        self.reset_workspace(preserve_files=preserve_files)
 
         self.stop_flag.clear()
-        
-        # 启动本地处理线程
+
         self.workflow_thread = threading.Thread(target=self._local_workflow_runner)
         self.workflow_thread.daemon = True
         self.workflow_thread.start()
         state.add_log("Starting local file workflow (skipping download)...")
 
     def _local_workflow_runner(self):
-        """本地文件工作流：跳过下载，直接处理"""
+        """Local file workflow: skip download and run processing directly."""
         try:
-            # 标记下载任务为已完成（跳过）
             state.update_task_status("download_360p", "completed")
             state.update_task_status("download_best", "completed")
             state.add_log("Download steps skipped (using local file).")
 
-            if self.stop_flag.is_set(): return
+            if self.stop_flag.is_set():
+                return
 
-            # 直接执行处理流程
             state.set_status(TaskStatus.PROCESSING)
             state.update_task_status("process_transcription", "running")
-            
+
             try:
                 state.add_log("Starting Audio/Subtitle Processing...")
-                
+
                 state.add_log("Running Whisper ASR...")
                 transcriber.transcribe()
-                
+
                 state.add_log("Splitting sentences (NLP)...")
                 splitter_nlp.split_by_spacy()
-                
+
                 state.add_log("Splitting sentences (Meaning)...")
                 splitter_meaning.split_sentences_by_meaning()
-                
+
                 state.add_log("Summarizing...")
                 summarizer.get_summary()
-                
+
                 state.add_log("Translating...")
                 translator.translate_all()
-                
+
                 state.add_log("Splitting for subtitles...")
                 subtitle_splitter.split_for_sub_main()
-                
+
                 state.add_log("Aligning timestamps...")
                 subtitle_generator.align_timestamp_main()
-                
+
                 state.update_task_status("process_transcription", "completed")
                 state.set_status(TaskStatus.COMPLETED)
                 state.add_log("Local file workflow completed successfully.")
-                
+
             except Exception as e:
                 state.add_log(f"Processing Failed: {str(e)}")
                 state.update_task_status("process_transcription", "error")
                 state.set_status(TaskStatus.ERROR)
                 import traceback
+
                 state.add_log(traceback.format_exc())
 
         except Exception as e:
             state.set_status(TaskStatus.ERROR)
             state.add_log(f"Local Workflow Critical Error: {str(e)}")
             import traceback
+
             state.add_log(traceback.format_exc())
 
     def continue_workflow(self):
-        """继续上次中断的任务，从断点处继续执行（不清理工作空间，不重新下载）"""
+        """Resume workflow from previous checkpoint without cleaning workspace."""
         if self.workflow_thread and self.workflow_thread.is_alive():
             state.add_log("Workflow already running.")
             return
 
         self.stop_flag.clear()
-        
-        # 不清理工作空间，直接从断点继续
+
         self.workflow_thread = threading.Thread(target=self._continue_runner)
         self.workflow_thread.daemon = True
         self.workflow_thread.start()
         state.add_log("Continuing workflow from last checkpoint...")
 
     def _continue_runner(self):
-        """继续执行工作流，直接运行处理流程，@check_file_exists 会自动跳过已完成步骤"""
+        """Resume workflow; check_file_exists decorators skip completed steps."""
         try:
             state.set_status(TaskStatus.PROCESSING)
             state.update_task_status("process_transcription", "running")
             state.add_log("Checking completed steps and resuming...")
-            
+
             try:
-                # 直接按顺序调用，装饰器会自动跳过已有输出文件的步骤
                 state.add_log("Running Whisper ASR...")
                 transcriber.transcribe()
-                
+
                 state.add_log("Splitting sentences (NLP)...")
                 splitter_nlp.split_by_spacy()
-                
+
                 state.add_log("Splitting sentences (Meaning)...")
                 splitter_meaning.split_sentences_by_meaning()
-                
+
                 state.add_log("Summarizing...")
                 summarizer.get_summary()
-                
+
                 state.add_log("Translating...")
                 translator.translate_all()
-                
+
                 state.add_log("Splitting for subtitles...")
                 subtitle_splitter.split_for_sub_main()
-                
+
                 state.add_log("Aligning timestamps...")
                 subtitle_generator.align_timestamp_main()
-                
+
                 state.update_task_status("process_transcription", "completed")
                 state.set_status(TaskStatus.COMPLETED)
                 state.add_log("Continue Workflow Completed.")
-                
+
             except Exception as e:
                 state.add_log(f"Continue Failed: {str(e)}")
                 state.update_task_status("process_transcription", "error")
                 state.set_status(TaskStatus.ERROR)
                 import traceback
+
                 state.add_log(traceback.format_exc())
 
         except Exception as e:
             state.set_status(TaskStatus.ERROR)
             state.add_log(f"Continue Critical Error: {str(e)}")
             import traceback
+
             state.add_log(traceback.format_exc())
 
     def burn_video(self):
         state.update_task_status("burn_video", "running")
         state.add_log("Starting Subtitle Burning...")
-        
+
         def run_burn():
             try:
                 subtitle_burner.burn_subtitle_to_video()
@@ -275,36 +363,32 @@ class TaskManager:
 
         threading.Thread(target=run_burn, daemon=True).start()
 
-    def reset_workspace(self, skip_output_clean=False):
+    def reset_workspace(self, preserve_files=None):
         """
-        归档当前执行并清理 output 文件夹。
-        skip_output_clean: 如果为 True，只归档字幕文件但不清理 output 目录（用于本地上传场景）
+        Archive subtitle artifacts and clean output directory.
+        preserve_files: file names in output directory that should be kept.
         """
         output_dir = "output"
         archive_dir = "archives"
-        
+        preserve_set = {os.path.basename(f) for f in (preserve_files or []) if f}
+
+        os.makedirs(output_dir, exist_ok=True)
         os.makedirs(archive_dir, exist_ok=True)
-        
-        # 检查 .ass 文件
+
         ass_file = os.path.join(output_dir, "src_trans.ass")
         if os.path.exists(ass_file):
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            new_name = f"{timestamp}.ass"
-            archive_path = os.path.join(archive_dir, new_name)
+            archive_path = os.path.join(archive_dir, f"{timestamp}.ass")
             shutil.move(ass_file, archive_path)
             state.add_log(f"Archived subtitle to {archive_path}")
-        
-        # 重置状态
+
         state.reset()
-        
-        # 如果跳过清理（本地上传场景），直接返回
-        if skip_output_clean:
-            state.add_log("Skipping output cleanup (local file mode).")
-            return
-            
-        # 清理 output 目录
+
         try:
             for filename in os.listdir(output_dir):
+                if filename in preserve_set:
+                    continue
+
                 file_path = os.path.join(output_dir, filename)
                 try:
                     if os.path.isfile(file_path) or os.path.islink(file_path):
@@ -313,8 +397,12 @@ class TaskManager:
                         shutil.rmtree(file_path)
                 except Exception as e:
                     state.add_log(f"Failed to delete {file_path}. Reason: {e}")
+
             state.add_log("Output directory cleaned.")
+            if preserve_set:
+                state.add_log(f"Preserved file(s): {', '.join(sorted(preserve_set))}")
         except Exception as e:
-             state.add_log(f"Error cleaning output directory: {e}")
+            state.add_log(f"Error cleaning output directory: {e}")
+
 
 task_manager = TaskManager()
