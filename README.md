@@ -1,7 +1,7 @@
 # VideoSubX
 
 VideoSubX 是一个基于 [VideoLingo](https://github.com/Huanshere/VideoLingo) 深度重构的自动化视频字幕翻译工具。
-
+部署教程：https://www.bilibili.com/video/BV1FnFhzgERG
 本项目遵循 [Apache 2.0](LICENSE) 许可证。
 #### 重要提示：install.py是基于50系以下设备使用的安装脚本，50系请自行安装最新cuda cudnn，torch，理论上已经去除了强制要求老版本的decumus，AMD 9000系也曾经正常跑通过，自行尝试
 ## ⚠️ 首次使用必读
