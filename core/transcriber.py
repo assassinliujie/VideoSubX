@@ -47,6 +47,14 @@ def transcribe():
     
     # 6. 处理数据
     df = process_transcription(combined_result)
+    
+    # 7. 可选：MFA 强制对齐优化时间轴（实验性功能）
+    if load_key("mfa.enabled"):
+        from core.asr_backend.mfa_aligner import align_transcription
+        rprint("[cyan]🔧 [实验性] 启用 MFA 时间轴优化...[/cyan]")
+        df = align_transcription(df, vocal_audio)
+    
+    # 8. 保存结果
     save_results(df)
         
 if __name__ == "__main__":

@@ -36,6 +36,55 @@ VideoSubX 是一个基于 [VideoLingo](https://github.com/Huanshere/VideoLingo) 
    - **硬性分割**：弃用了基于连接词等的软分割逻辑，新增基于停顿时长的硬性分割。
    - **提示词优化**：内置了经过测试优化的 Prompt，并移除了原项目中的 TTS 模块和远程 Whisper API 依赖，专注于本地化的字幕生成质量。
 
+## 🧪 实验性功能：MFA 强制对齐
+
+> [!WARNING]
+> **实验性功能** - 此功能需要手动安装，可能会影响现有环境依赖。
+
+### 功能介绍
+
+MFA（Montreal Forced Aligner）是一个声学强制对齐工具。启用后可以**修复起始时间戳晚于说话人一个音节才开始的问题**，让字幕时间轴更加精准。
+
+### 安装方法
+
+```bash
+# 在已激活的 conda 环境中运行
+conda activate videosubx
+python install_mfa.py
+```
+
+### 启用方式
+
+编辑 `config.yaml`：
+
+```yaml
+mfa:
+  enabled: true
+  acoustic_model: 'english_mfa'  # 或 mandarin_mfa, japanese_mfa 等
+  dictionary: 'english_mfa'
+```
+
+### ⚠️ 常见问题
+
+安装 MFA 可能会导致以下依赖冲突，`install_mfa.py` 已内置修复逻辑，如遇报错请优先检查：
+
+| 问题 | 症状 | 修复方式 |
+|------|------|----------|
+| **NumPy 版本冲突** | `ModuleNotFoundError: No module named '_kalpy'` | 脚本会自动替换 pip 版本为 conda 版本 |
+| **FFmpeg DLL 冲突** | `无法定位程序输入点 DllMain` | 脚本会自动删除冲突的 DLL 文件 |
+
+如自动修复失败，可手动执行：
+
+```bash
+# 修复 NumPy
+pip uninstall numpy -y
+conda install -c conda-forge numpy=1.26.4 -y
+
+# 修复 FFmpeg（删除 conda 环境中的冲突文件）
+Remove-Item "$env:CONDA_PREFIX\Library\bin\avcodec*.dll" -Force
+Remove-Item "$env:CONDA_PREFIX\Library\bin\ffmpeg.exe" -Force
+```
+
 ## **界面展示**
 
 ![image-20260204231244089](docs/images/image-20260204231244089.png)

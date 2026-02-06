@@ -85,6 +85,20 @@ pause_before_translate: false
 # 字幕裁剪相关配置
 min_trim_duration: 3.5  # 短于此值的字幕不会被裁剪
 
+## ======================== 实验性功能 ======================== ##
+
+# MFA 强制对齐（实验性功能）
+# 使用 Montreal Forced Aligner 优化词级时间轴精度
+# ⚠️ 需要先运行 python install_mfa.py 安装 MFA
+# ⚠️ 会显著增加处理时间（约 2-5 倍）
+mfa:
+  enabled: false
+  # 声学模型，支持: english_mfa, mandarin_mfa, japanese_mfa 等
+  # 完整列表: https://mfa-models.readthedocs.io/en/latest/acoustic/
+  acoustic_model: 'english_mfa'
+  # 发音词典，支持: english_mfa, mandarin_china_mfa, japanese_mfa 等
+  dictionary: 'english_mfa'
+
 ## ======================== 附加设置 ======================== ##
 
 # Whisper 模型目录
