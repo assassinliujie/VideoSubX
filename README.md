@@ -45,7 +45,9 @@ VideoSubX 是一个基于 [VideoLingo](https://github.com/Huanshere/VideoLingo) 
 ### 功能介绍
 
 MFA https://github.com/MontrealCorpusTools/Montreal-Forced-Aligner 是一个声学强制对齐工具。启用后可以**修复部分词语起始时间戳晚于说话人一个音节才开始的问题**，让字幕时间轴更加精准。
-
+启用前：<img width="356" height="191" alt="图片" src="https://github.com/user-attachments/assets/ec93ee5f-455b-4ccf-b099-66305bb80a08" />
+启用后：<img width="387" height="194" alt="图片" src="https://github.com/user-attachments/assets/83ee5946-0416-45cb-acdd-2a5c706f8a06" />
+单词起始时间明显修复
 ### 安装方法
 
 ```bash
