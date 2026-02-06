@@ -1,6 +1,6 @@
 # VideoSubX
 
-VideoSubX 是一个基于 [VideoLingo](https://github.com/Huanshere/VideoLingo) 深度重构的自动化视频字幕翻译工具。
+VideoSubX 是一个以 [VideoLingo](https://github.com/Huanshere/VideoLingo) 部分功能为基础，并增加了部分新功能和优化的自动化视频字幕翻译工具。
 
 部署教程：https://www.bilibili.com/video/BV1FnFhzgERG
 
