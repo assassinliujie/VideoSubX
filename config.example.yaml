@@ -90,7 +90,6 @@ min_trim_duration: 3.5  # 短于此值的字幕不会被裁剪
 # MFA 强制对齐（实验性功能）
 # 使用 Montreal Forced Aligner 优化词级时间轴精度
 # ⚠️ 需要先运行 python install_mfa.py 安装 MFA
-# ⚠️ 会显著增加处理时间（约 2-5 倍）
 mfa:
   enabled: false
   # 声学模型，支持: english_mfa, mandarin_mfa, japanese_mfa 等
