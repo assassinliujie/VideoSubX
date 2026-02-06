@@ -1,0 +1,403 @@
+:root {
+    --bg-color: #000000;
+    --text-color: #ffb000;
+    --dim-color: #996900;
+    --danger-color: #ff3333;
+    --scanline-color: rgba(0, 0, 0, 0.5);
+    --crt-flicker: rgba(255, 176, 0, 0.05);
+    --font-main: "Courier New", Courier, monospace;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-main);
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+    text-shadow: 0 0 2px var(--dim-color);
+}
+
+/* CRT Effect */
+.crt-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%,
+            rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg,
+            rgba(255, 0, 0, 0.06),
+            rgba(0, 255, 0, 0.02),
+            rgba(0, 0, 255, 0.06));
+    background-size: 100% 2px, 3px 100%;
+    pointer-events: none;
+    z-index: 999;
+    animation: flicker 0.15s infinite;
+}
+
+@keyframes flicker {
+    0% {
+        opacity: 0.97;
+    }
+
+    50% {
+        opacity: 1.0;
+    }
+
+    100% {
+        opacity: 0.98;
+    }
+}
+
+/* Layout */
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    /* Ensure container takes full viewport height */
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 10px;
+    box-sizing: border-box;
+    overflow: hidden;
+    /* Prevent body scroll triggers */
+}
+
+.header {
+    border-bottom: 2px solid var(--text-color);
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    /* Don't shrink header */
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 2em;
+    letter-spacing: 2px;
+}
+
+.status-indicator {
+    border: 1px solid var(--text-color);
+    padding: 5px 15px;
+    font-weight: bold;
+    background: rgba(255, 176, 0, 0.1);
+}
+
+.main-interface {
+    display: flex;
+    flex: 1;
+    /* Take remaining space */
+    gap: 20px;
+    min-height: 0;
+    /* CRITICAL for flexbox scrolling */
+    overflow: hidden;
+    /* Prevent spillover */
+}
+
+.left-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+    /* Allow left panel to scroll if controls are too tall */
+    padding-right: 5px;
+    /* Space for scrollbar */
+    min-width: 300px;
+}
+
+.right-panel {
+    flex: 1.5;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    /* Allow shrinking */
+    overflow: hidden;
+    /* Contain children */
+}
+
+.panel {
+    border: 2px solid var(--text-color);
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.8);
+    position: relative;
+    box-shadow: 0 0 10px rgba(255, 176, 0, 0.2);
+    flex-shrink: 0;
+    /* Default don't shrink panels unless specified */
+}
+
+/* Panel Corner Deco */
+.panel::before {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    width: 10px;
+    height: 10px;
+    border-top: 2px solid var(--text-color);
+    border-left: 2px solid var(--text-color);
+}
+
+.panel::after {
+    content: "";
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 10px;
+    height: 10px;
+    border-bottom: 2px solid var(--text-color);
+    border-right: 2px solid var(--text-color);
+}
+
+h2 {
+    margin-top: 0;
+    font-size: 1.2em;
+    border-bottom: 1px dashed var(--dim-color);
+    padding-bottom: 5px;
+    margin-bottom: 15px;
+    opacity: 0.9;
+}
+
+/* Controls */
+.input-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 15px;
+}
+
+.input-group label {
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+input[type="text"] {
+    background: #000;
+    border: 1px solid var(--text-color);
+    color: var(--text-color);
+    padding: 8px;
+    font-family: var(--font-main);
+    font-size: 1em;
+    outline: none;
+}
+
+input[type="text"]:focus {
+    background: rgba(255, 176, 0, 0.1);
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.btn {
+    background: #000;
+    color: var(--text-color);
+    border: 2px solid var(--text-color);
+    padding: 10px 15px;
+    font-family: var(--font-main);
+    font-weight: bold;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.1s;
+    font-size: 0.9em;
+    flex: 1;
+    /* Make buttons even width */
+}
+
+.btn.micro {
+    padding: 2px 6px;
+    font-size: 0.6em;
+    margin-left: 10px;
+    border-width: 1px;
+    flex: none;
+    /* Don't expand */
+    vertical-align: middle;
+    line-height: normal;
+}
+
+.btn:hover {
+    background: var(--text-color);
+    color: #000;
+    box-shadow: 0 0 10px var(--text-color);
+}
+
+.btn:active {
+    transform: scale(0.98);
+}
+
+.btn.danger {
+    color: var(--danger-color);
+    border-color: var(--danger-color);
+}
+
+.btn.danger:hover {
+    background: var(--danger-color);
+    color: #000;
+}
+
+/* 本地文件选择区域 */
+.local-file-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+.file-name-display {
+    color: var(--dim-color);
+    font-size: 0.85em;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Task List */
+.task-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.task-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px dotted var(--dim-color);
+}
+
+.checkbox {
+    margin-right: 10px;
+    font-weight: bold;
+}
+
+.status {
+    font-size: 0.9em;
+}
+
+.status.running {
+    animation: blink 1s infinite;
+}
+
+.status.completed {
+    color: #55ff55;
+    text-shadow: 0 0 5px #55ff55;
+}
+
+.status.error {
+    color: var(--danger-color);
+}
+
+/* File List */
+.file-list-container {
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 0.8em;
+}
+
+.file-item {
+    padding: 3px 0;
+    display: flex;
+    justify-content: space-between;
+}
+
+.file-item a {
+    color: var(--text-color);
+    text-decoration: none;
+}
+
+.file-item a:hover {
+    text-decoration: underline;
+    background: rgba(255, 176, 0, 0.2);
+}
+
+/* Logs */
+.log-section {
+    flex: 1;
+    /* Allow log section to take all height */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    /* Crucial */
+    overflow: hidden;
+    /* Don't expand */
+    padding-bottom: 5px;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.console-window {
+    flex: 1;
+    /* Fill remaining height of log section */
+    background: #050505;
+    border: 1px inset var(--dim-color);
+    padding: 10px;
+    overflow-y: auto;
+    /* Scroll! */
+    font-size: 0.9em;
+    white-space: pre-wrap;
+    word-break: break-all;
+    min-height: 0;
+    /* Stop expansion */
+}
+
+.log-line {
+    margin-bottom: 2px;
+    line-height: 1.2;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #000;
+    border-left: 1px solid var(--dim-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--text-color);
+    border: 1px solid #000;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #ffcc55;
+}
+
+.footer {
+    border-top: 1px solid var(--dim-color);
+    padding-top: 5px;
+    margin-top: 10px;
+    font-size: 0.8em;
+    text-align: right;
+    color: var(--dim-color);
+}
+
+.blink {
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}

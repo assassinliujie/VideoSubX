@@ -1,0 +1,134 @@
+## ======================== 基础设置 ======================== ##
+
+display_language: "zh-CN"
+
+# API 设置（请替换为你的 API Key）
+api:
+  key: 'YOUR_API_KEY_HERE'
+  base_url: 'https://api.openai.com/v1'
+  model: 'gpt-4.1'
+  llm_support_json: true
+
+# LLM 多线程访问数量，如使用本地 LLM 请设为 1
+max_workers: 4
+
+# 目标语言，会写入提示词中，可用自然语言描述
+target_language: '简体中文'
+
+# 是否在转录前使用人声分离
+demucs: true
+
+# audio-separator 配置
+audio_separator:
+  # 推荐模型：
+  # - htdemucs.yaml: 
+  # - model_mel_band_roformer_ep_3005_sdr_11.4360.ckpt: 更高质量的人声分离
+  model: 'model_mel_band_roformer_ep_3005_sdr_11.4360.ckpt'
+
+whisper:
+  # 模型选择 ["large-v2", "large-v3", "large-v3-turbo"]
+  model: 'large-v2'
+  # Whisper 指定识别语言 ISO 639-1（设为 auto 可自动检测语言）
+  language: auto
+  detected_language: 'en'
+  # Whisper 运行模式，重构后仅支持 stable-ts
+  runtime: 'stable'
+
+# 是否将字幕烧录到视频中
+burn_subtitles: false
+
+## ======================== 高级设置 ======================== ##
+
+# h264_nvenc GPU 加速，确保你的 GPU 支持
+ffmpeg_gpu: false
+
+# Youtube 设置
+youtube:
+  cookies_path: ''
+
+# YouTube 视频下载默认分辨率 [360, 1080, best]
+ytb_resolution: '1080'
+
+# 网络代理设置（留空则不使用代理，适合已配置系统代理的用户）
+# 格式示例: http://127.0.0.1:7890 或 socks5://127.0.0.1:1080
+proxy: ''
+
+subtitle:
+  # 每行字幕最大字符长度
+  max_length: 75
+  # 翻译字幕略大于源字幕，影响字幕拆分的参考长度
+  target_multiplier: 1.2
+  # 基于时间间隔分句的阈值（秒）
+  time_split_threshold: 1.5
+
+  # 字幕字体设置（用于生成 .ass 文件）
+  style:
+    # 中文字体（Windows: SimHei, macOS: PingFang SC）
+    chinese_font: 'SimHei'
+    # 英文字体
+    english_font: 'Arial'
+    # 字体大小
+    font_size: 70
+
+# 摘要长度，本地 LLM 建议设为 2000
+summary_length: 8000
+
+# 第一次粗切的最大词数，低于 18 切得太细影响翻译，高于 22 太长难以对齐
+max_split_length: 20
+
+# 是否在翻译结果中反映原文
+reflect_translate: true
+
+# 是否在提取专业术语后暂停，允许用户手动调整术语表
+pause_before_translate: false
+
+# 字幕裁剪相关配置
+min_trim_duration: 3.5  # 短于此值的字幕不会被裁剪
+
+## ======================== 附加设置 ======================== ##
+
+# Whisper 模型目录
+model_dir: './_model_cache'
+
+# 支持的视频格式
+allowed_video_formats:
+- 'mp4'
+- 'mov'
+- 'avi'
+- 'mkv'
+- 'flv'
+- 'wmv'
+- 'webm'
+
+allowed_audio_formats:
+- 'wav'
+- 'mp3'
+- 'flac'
+- 'm4a'
+
+# Spacy 模型映射
+spacy_model_map:
+  en: 'en_core_web_md'
+  ru: 'ru_core_news_md'
+  fr: 'fr_core_news_md'
+  ja: 'ja_core_news_md'
+  es: 'es_core_news_md'
+  de: 'de_core_news_md'
+  it: 'it_core_news_md'
+  zh: 'zh_core_web_md'
+  ko: 'ko_core_news_sm'
+
+# 使用空格分隔的语言
+language_split_with_space:
+- 'en'
+- 'es'
+- 'fr'
+- 'de'
+- 'it'
+- 'ru'
+- 'ko'
+
+# 不使用空格分隔的语言
+language_split_without_space:
+- 'zh'
+- 'ja'

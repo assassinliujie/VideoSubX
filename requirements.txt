@@ -1,0 +1,51 @@
+# VideoSubX 核心依赖
+
+# === PyTorch (由 install.py 安装，请勿修改) ===
+# GPU: torch==2.0.0+cu118 torchaudio==2.0.0+cu118
+# CPU: torch==2.1.2 torchaudio==2.1.2
+
+# === ASR 语音识别 ===
+stable-ts==2.19.1
+openai-whisper
+
+# === 音频处理 ===
+# audio-separator 需要单独安装（GPU/CPU 版本）
+librosa==0.10.2.post1
+resampy==0.4.3
+pydub==0.25.1
+
+# === 视频处理 ===
+moviepy==1.0.3
+opencv-python==4.10.0.84
+yt-dlp
+deno
+
+# === NLP 文本处理 ===
+spacy==3.7.4
+autocorrect-py
+pypinyin
+g2p_en
+
+# === LLM 翻译 ===
+openai==1.55.3
+json-repair
+
+# === 数据处理 ===
+pandas==2.2.3
+numpy==1.26.4
+openpyxl==3.1.5
+
+# === Web 服务 ===
+fastapi
+uvicorn
+websockets
+python-multipart
+syllables
+
+# === 工具 ===
+rich
+requests==2.32.3
+PyYAML==6.0.2
+ruamel.yaml
+InquirerPy
+pynvml

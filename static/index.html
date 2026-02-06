@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VideoSubX 终端控制台</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="crt-overlay"></div>
+    <div class="container">
+        <header class="header">
+            <h1>SUBHUB v2.0</h1>
+            <div class="status-indicator" id="global-status">就绪</div>
+        </header>
+
+        <div class="main-interface">
+            <!-- Left Column: Controls & Status -->
+            <div class="left-panel">
+                <section class="panel input-section">
+                    <h2>>> 任务输入</h2>
+                    <div class="input-group">
+                        <label for="url-input">视频链接:</label>
+                        <input type="text" id="url-input" placeholder="输入 YouTube 视频链接..." autocomplete="off">
+                    </div>
+                    <div class="input-group" style="margin-top: 8px;">
+                        <label>或上传本地文件:</label>
+                        <div class="local-file-area">
+                            <input type="file" id="video-upload" accept=".mp4,.mkv,.avi,.mov,.wmv,.flv,.webm,.mp3,.wav,.m4a,.flac" style="display: none;">
+                            <button id="btn-select-video" class="btn secondary">选择文件</button>
+                            <span id="selected-video-name" class="file-name-display">未选择文件</span>
+                        </div>
+                    </div>
+                    <div class="action-buttons">
+                        <button id="btn-start" class="btn primary">开始任务</button>
+                        <button id="btn-continue" class="btn secondary">继续任务</button>
+                        <button id="btn-stop" class="btn danger">强制停止</button>
+                        <button id="btn-reset" class="btn warning">归档重置</button>
+                    </div>
+                </section>
+
+                <section class="panel status-section">
+                    <h2>>> 系统状态</h2>
+                    <ul class="task-list">
+                        <li id="task-dl-360">
+                            <span class="checkbox">[ ]</span>
+                            <span class="label">低画质获取</span>
+                            <span class="status">等待中</span>
+                        </li>
+                        <li id="task-process">
+                            <span class="checkbox">[ ]</span>
+                            <span class="label">神经网络处理</span>
+                            <span class="status">等待中</span>
+                        </li>
+                        <li id="task-dl-best">
+                            <span class="checkbox">[ ]</span>
+                            <span class="label">高画质获取</span>
+                            <span class="status">等待中</span>
+                        </li>
+                        <li id="task-burn">
+                            <span class="checkbox">[ ]</span>
+                            <span class="label">最终烧录</span>
+                            <span class="status">等待中</span>
+                        </li>
+                    </ul>
+                </section>
+
+                <section class="panel manual-section">
+                    <h2>>> 手动操作</h2>
+                    <div class="upload-area">
+                        <label>覆盖上传 (.ass):</label>
+                        <input type="file" id="file-upload" accept=".ass">
+                        <button id="btn-upload" class="btn secondary">上传文件</button>
+                    </div>
+                    <div class="burn-control">
+                        <button id="btn-burn" class="btn action">>>> 执行烧录 <<<< /button>
+                    </div>
+                </section>
+
+                <section class="panel files-section">
+                    <h2>>> 输出文件</h2>
+                    <div id="file-list" class="file-list-container">
+                        <!-- File items will be injected here -->
+                    </div>
+                </section>
+            </div>
+
+            <!-- Right Column: Logs -->
+            <div class="right-panel">
+                <section class="panel log-section">
+                    <div class="log-header">
+                        <h2>>> 系统日志 <button id="btn-clear-log" class="btn micro">清除屏幕</button></h2>
+                    </div>
+                    <div id="console-output" class="console-window">
+                        <!-- Logs go here -->
+                        <div class="log-line">系统初始化完成...</div>
+                        <div class="log-line">等待指令输入...</div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <span class="blink">_</span> 连接已建立 | PIP-BOY OS v7.1.08
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
