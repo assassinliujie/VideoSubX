@@ -2,6 +2,11 @@
 
 VideoSubX 是一个以 [VideoLingo](https://github.com/Huanshere/VideoLingo) 部分功能为基础，并增加了部分新功能和优化的自动化视频字幕翻译工具。
 
+> [!IMPORTANT]
+> **模型选择结论（多轮实测）**
+> - 当前项目在字幕任务（断句/翻译/重断句）上的综合稳定性与效果排序为：`gpt-4.1 > gpt-5.2 > claude-sonnet-4-5`。
+> - 请勿盲目选择 SOTA 模型，建议先以项目实际链路做小样本 A/B 测试后再定型。
+
 部署教程：https://www.bilibili.com/video/BV1FnFhzgERG
 
 本项目遵循 [Apache 2.0](LICENSE) 许可证。
@@ -38,6 +43,8 @@ VideoSubX 是一个以 [VideoLingo](https://github.com/Huanshere/VideoLingo) 部
 3. **切割与翻译逻辑优化**
    - **硬性分割**：弃用了基于连接词等的软分割逻辑，新增基于停顿时长的硬性分割。
    - **提示词优化**：内置了经过测试优化的 Prompt，并移除了原项目中的 TTS 模块和远程 Whisper API 依赖，专注于本地化的字幕生成质量。
+   - **断句 Prompt 重写（新增）**：重写了 LLM 断句提示词的优先级（语义完整性/禁悬挂尾词优先，长度均衡降级），减少模型擅自改写原句的风险。
+   - **英文 ASR 词级校正（新增）**：在 `cleaned_chunks.xlsx` 生成后新增独立校正步骤，修正产品名称/人物名称等错误，按 `start_key` 返回并应用替换建议，避免在断句阶段混入纠错任务。
 
 ## 🧪 实验性功能：MFA 强制对齐
 
@@ -135,7 +142,7 @@ python install.py
 
 ## 配置说明
 
-在启动前，请复制 `config.example.yaml` 为 `config.yaml`，并编辑其中的配置项。除了常规的 API Key，以下两项设置至关重要：
+在启动前，请复制 `config.example.yaml` 为 `config.yaml`，并编辑其中的配置项。除了常规的 API Key，以下几项设置至关重要：
 
 ### 1. 网络代理 (Proxy)
 
@@ -156,6 +163,60 @@ style:
   chinese_font: 'SimHei'
   english_font: 'Arial'
 ```
+
+### Base URL 填写规则（重要）
+
+`api.base_url` 必须填写服务商根地址，不要带 `/v1`，也不要在末尾加 `/`。  
+例如 OpenAI 正确写法：
+
+```yaml
+api:
+  base_url: 'https://api.openai.com'
+```
+
+### 3. LLM 请求超时与重试（新增）
+
+当上游接口偶发慢请求时，建议使用较短超时 + 多次重试，以减少“长时间无日志反馈”的卡顿感。
+
+```yaml
+api:
+  request_timeout_sec: 30      # 单次请求超时时间（秒）
+  request_retries: 8           # 失败后重试次数（不含首次）
+  request_retry_delay_sec: 1   # 每次重试间隔（秒）
+```
+
+### 4. 润色翻译开关（注释更新）
+
+```yaml
+# 是否启用二段式翻译（直译 + 润色）
+# true: 先直译再润色（两次调用，质量更高，速度更慢）
+# false: 单次融合翻译（一次调用，更快）
+reflect_translate: true
+```
+
+### 5. 英文 ASR 词级校正（新增，默认关闭）
+
+该步骤会在 `cleaned_chunks.xlsx` 生成后执行，向 LLM 发送词级英文识别结果，返回基于 `start_key` 的替换建议并应用到原文件。  
+校正规则是“仅允许改单词，不允许增删词、不允许语法改写”。
+每次执行会追加写入 `output/log/english_correction_changelog.csv`，可直接查看每条建议是否被应用及跳过原因。
+
+```yaml
+english_correction:
+  enabled: false
+  only_when_detected_language: true
+  api:
+    # 留空则回退到全局 api.*
+    key: ''
+    base_url: ''
+    model: ''
+    llm_support_json: true
+    request_timeout_sec: 30
+    request_retries: 5
+    request_retry_delay_sec: 1
+```
+
+> [!IMPORTANT]
+> 推荐先在小样本上开启验证。该步骤会影响后续分句与时间轴对齐输入文本。
 
 ## 启动服务
 

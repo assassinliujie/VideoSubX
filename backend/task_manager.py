@@ -15,6 +15,7 @@ if current_dir not in sys.path:
 from core import (
     downloader,
     transcriber,
+    english_corrector,
     splitter_nlp,
     splitter_meaning,
     summarizer,
@@ -150,6 +151,9 @@ class TaskManager:
                     state.add_log("Running Whisper ASR...")
                     transcriber.transcribe()
 
+                    state.add_log("Correcting English ASR tokens...")
+                    english_corrector.correct_english_asr_tokens()
+
                     state.add_log("Splitting sentences (NLP)...")
                     splitter_nlp.split_by_spacy()
 
@@ -277,6 +281,9 @@ class TaskManager:
                 state.add_log("Running Whisper ASR...")
                 transcriber.transcribe()
 
+                state.add_log("Correcting English ASR tokens...")
+                english_corrector.correct_english_asr_tokens()
+
                 state.add_log("Splitting sentences (NLP)...")
                 splitter_nlp.split_by_spacy()
 
@@ -337,6 +344,9 @@ class TaskManager:
             try:
                 state.add_log("Running Whisper ASR...")
                 transcriber.transcribe()
+
+                state.add_log("Correcting English ASR tokens...")
+                english_corrector.correct_english_asr_tokens()
 
                 state.add_log("Splitting sentences (NLP)...")
                 splitter_nlp.split_by_spacy()

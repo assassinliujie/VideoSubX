@@ -12,16 +12,26 @@ You are a professional Netflix subtitle splitter in **{language}**.
 ## Task
 Split the given subtitle text into **{num_parts}** parts, each less than **{word_limit}** words.
 
-1. Maintain sentence meaning coherence according to Netflix subtitle standards
-2. MOST IMPORTANT: Keep parts roughly equal in length (minimum 3 words each)
-3. Split at natural points like punctuation marks or conjunctions
-4. If provided text is repeated words, simply split at the middle of the repeated words.
+1. Maintain sentence meaning coherence according to Netflix subtitle standards, and ensure each part is a meaningful phrase/clause unit (not a dangling fragment).
+2. MOST IMPORTANT: Do not end a non-final part with dangling function words, especially prepositions/conjunctions such as: of, into, from, to, for, with, at, on, in, by, about, as, and, or.
+3. Avoid unnecessary splitting: if the sentence is already natural and does not need splitting (while still meeting length limits), prefer keeping it unsplit.
+4. Keep parts roughly equal in length (minimum 3 words each) when possible, but this is lower priority than Rule 1-3.
+5. Split at natural points like punctuation marks or conjunctions.
+6. If provided text is repeated words, simply split at the middle of the repeated words.
+
+### Text Fidelity Constraint (STRICT)
+1. Keep the source wording exactly as-is.
+2. Do NOT rewrite grammar, paraphrase, or "improve" intentional jokes/mistakes.
+3. Do NOT normalize colloquial spoken forms, including but not limited to: gonna, wanna, gotta, kinda, sorta, ain't, y'all.
+4. Outside `[br]`, text must be character-preserving.
+
+Priority note: If constraints conflict, prioritize semantic integrity and no-dangling-endings first, then avoid unnecessary splitting, and finally optimize length balance.
 
 ## Steps
-1. Analyze the sentence structure, complexity, and key splitting challenges
-2. Generate two alternative splitting approaches with [br] tags at split positions
-3. Compare both approaches highlighting their strengths and weaknesses
-4. Choose the best splitting approach
+1. Analyze sentence structure, complexity, and splitting challenges.
+2. Generate two alternative splitting approaches with [br] tags at split positions.
+3. Compare both approaches highlighting their strengths and weaknesses.
+4. Choose the best splitting approach.
 
 ## Given Text
 <split_this_sentence>
@@ -39,9 +49,54 @@ Split the given subtitle text into **{num_parts}** parts, each less than **{word
 }}
 ```
 
-Note: Start you answer with ```json and end with ```, do not add any other text.
+Note: Start your answer with ```json and end with ```, do not add any other text.
 """.strip()
     return split_prompt
+
+def get_english_correction_prompt(tokens_json: str):
+    return f"""
+## Role
+You are an English ASR token correction expert.
+
+## Task
+Given word-level English ASR tokens, identify only the tokens that should be corrected.
+
+English correction scope: fix spelling or ASR errors, including misspelled proper nouns (person/brand/company/product names). You may only replace existing tokens; do not add, delete, or reorder tokens. No other modifications to the English text are allowed.
+
+## Rules
+1. You must use `start_key` as the primary key for each correction.
+2. Only return high-confidence corrections.
+3. Do NOT add or delete tokens.
+4. Do NOT reorder tokens.
+5. Do NOT rewrite grammar or style.
+6. Do NOT normalize colloquial forms (e.g., gonna/wanna/gotta/kinda/sorta/ain't/y'all) under any circumstance.
+7. If uncertain, do not correct.
+
+## INPUT
+<tokens_json>
+{tokens_json}
+</tokens_json>
+
+## Output in only JSON format and no other text
+```json
+{{
+    "analysis": "Brief analysis of correction confidence and error types",
+    "corrections": [
+        {{
+            "start_key": "exact start_key from input",
+            "source": "original token",
+            "target": "corrected token",
+            "type": "spelling|asr|person|brand|company|product",
+            "confidence": "high",
+            "reason": "brief reason"
+        }}
+    ]
+}}
+```
+
+If no corrections are needed, return `"corrections": []`.
+Note: Start your answer with ```json and end with ```, do not add any other text.
+""".strip()
 
 """{{
     "analysis": "Brief analysis of the text structure",
@@ -277,6 +332,79 @@ Please use a contextual approach to optimize the text:
 Note: Start you answer with ```json and end with ```, do not add any other text.
 '''
     return prompt_expressiveness.strip()
+
+def get_prompt_single_pass(lines, shared_prompt):
+    TARGET_LANGUAGE = load_key("target_language")
+    line_splits = lines.split('\n')
+    json_format = {}
+    for i, line in enumerate(line_splits, 1):
+        json_format[f"{i}"] = {
+            "origin": line,
+            "direct": f"faithful {TARGET_LANGUAGE} translation {i}",
+            "reflect": "brief reflection on wording and structure",
+            "free": f"natural and concise {TARGET_LANGUAGE} subtitle {i}",
+        }
+    json_format = json.dumps(json_format, indent=2, ensure_ascii=False)
+
+    src_language = load_key("whisper.detected_language")
+    prompt_single_pass = f'''
+## Role
+You are a professional Netflix subtitle translator and language consultant.
+You are fluent in both {src_language} and {TARGET_LANGUAGE}, as well as their respective cultures.
+Your expertise lies in accurately understanding the semantics and structure of the original text, then optimizing it for natural subtitle reading.
+
+## Task
+Translate the original {src_language} subtitles into high-quality {TARGET_LANGUAGE} subtitles in a single pass.
+For each line, provide:
+1. `direct`: a faithful translation that preserves original meaning and details
+2. `reflect`: a brief reflection on wording and structure improvements
+3. `free`: a final natural subtitle line optimized for readability
+
+### Phase A: Faithfulness (must satisfy first)
+1. Faithful to the original: accurately convey the original meaning without arbitrary additions or omissions.
+2. Accurate terminology: use professional terms correctly and consistently.
+3. Context awareness: fully reflect the background and contextual relationships.
+
+### Phase B: Expressiveness (optimize after faithfulness)
+1.  **Semantic Distribution and Redundancy Elimination**:
+    - **Problem**: A common AI error is when translating adjacent source lines (e.g., Line A and Line B), the translation for Line A improperly contains the combined meaning of A+B. Then, the translation for Line B unnecessarily repeats the meaning of B, creating redundancy.
+    - **Your Task**: Identify and correct this. Instead of merging, you must **redistribute the semantic components** logically and naturally across the corresponding translated lines. The goal is a smooth, non-repetitive flow where both lines contribute meaningfully.
+2.  **Completeness of Detail**: While eliminating redundancy, ensure no specific details, examples, or nuances are lost.
+3.  **Natural Sentence Splitting**: Keep natural split flow when one idea spans adjacent source lines.
+4.  **Word Order Flexibility**: You may reorder components across adjacent lines for natural flow, while preserving line count and meaning.
+5.  **Fact Checking**: Keep proper nouns, brand names, technical terms, and cultural references accurate.
+6.  **Length Optimization**: Keep subtitles concise and readable.
+7.  **Cultural Localization**: Use natural target-language expressions without forced localization.
+8.  **Oral Connectors**: Handle connectors like "but", "so", "well" naturally.
+9.  **Numerals**: Use Chinese numerals (〇一二三四) for small numbers and emphasis; use Arabic numerals for technical content, dates, and larger numbers.
+
+### Core Structural Constraints (hard constraints)
+1. Line count must exactly match the number of source lines.
+2. Never leave empty translations.
+3. Never merge two source lines into one target line.
+4. Every source line must have a corresponding non-empty target line.
+
+{shared_prompt}
+
+<Translation Analysis Steps>
+1. Produce `direct` first (faithful, precise, complete).
+2. Briefly reflect in `reflect` (fluency, factual checks, structural issues).
+3. Produce `free` as final subtitle line (natural, concise, context-aware).
+</Translation Analysis Steps>
+
+## INPUT
+<subtitles>
+{lines}
+</subtitles>
+
+## Output in only JSON format and no other text
+```json
+{json_format}
+```
+
+Note: Start you answer with ```json and end with ```, do not add any other text.
+'''
+    return prompt_single_pass.strip()
 
 
 ## ================================================================

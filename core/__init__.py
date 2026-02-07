@@ -3,6 +3,7 @@ try:
     from . import (
         downloader,
         transcriber,
+        english_corrector,
         splitter_nlp,
         splitter_meaning,
         summarizer,
@@ -21,6 +22,7 @@ __all__ = [
     'update_key',
     'downloader',
     'transcriber',
+    'english_corrector',
     'splitter_nlp',
     'splitter_meaning',
     'summarizer',

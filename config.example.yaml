@@ -5,9 +5,19 @@ display_language: "zh-CN"
 # API 设置（请替换为你的 API Key）
 api:
   key: 'YOUR_API_KEY_HERE'
-  base_url: 'https://api.openai.com/v1'
+  # IMPORTANT: use provider root URL only. Do NOT add '/v1' and do NOT keep trailing '/'.
+  # Correct example: https://api.openai.com
+  base_url: 'https://api.openai.com'
+  # If model contains "claude", VideoSubX will use Claude native /v1/messages mode.
+  # Otherwise it uses OpenAI chat.completions mode.
   model: 'gpt-4.1'
   llm_support_json: true
+  # Optional: per-request timeout in seconds (default 300 if omitted)
+  request_timeout_sec: 300
+  # Optional: retry count after first failed attempt (default 5)
+  request_retries: 5
+  # Optional: fixed delay between retries in seconds (default 1)
+  request_retry_delay_sec: 1
 
 # LLM 多线程访问数量，如使用本地 LLM 请设为 1
 max_workers: 4
@@ -73,6 +83,22 @@ summary_length: 8000
 
 # 第一次粗切的最大词数，低于 18 切得太细影响翻译，高于 22 太长难以对齐
 max_split_length: 20
+
+# 英文 ASR 词级校正（默认关闭）
+english_correction:
+  # 是否启用（在 cleaned_chunks.xlsx 产出后执行）
+  enabled: false
+  # 仅在识别语言为英语时执行
+  only_when_detected_language: true
+  # 可独立配置 API（留空则回退到全局 api 配置）
+  api:
+    key: ''
+    base_url: ''
+    model: ''
+    llm_support_json: true
+    request_timeout_sec: 30
+    request_retries: 5
+    request_retry_delay_sec: 1
 
 # 是否在翻译结果中反映原文
 reflect_translate: true
