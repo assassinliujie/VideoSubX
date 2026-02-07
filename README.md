@@ -219,6 +219,33 @@ english_correction:
 > [!IMPORTANT]
 > 推荐先在小样本上开启验证。该步骤会影响后续分句与时间轴对齐输入文本。
 
+### 6. rough_split 专有名词断裂回并（新增，可选）
+
+该步骤在 `rough_split` 之后执行，向 LLM 发送相邻行边界信息，识别“跨行被断开的多词专有名词”（如产品型号、公司名、人名、地名等）。  
+LLM 只负责识别边界断裂，真正拼接由脚本执行，并根据行长自动判断：
+- 把下一句句首并回上一句句末
+- 或把上一句句末并到下一句句首
+
+每次执行会追加写入 `output/log/rough_split_entity_repair_changelog.csv`，并在首次运行时备份 `output/log/rough_split_before_entity_repair.txt`。
+
+```yaml
+rough_split_entity_repair:
+  enabled: false
+  only_when_space_joiner: true
+  max_pairs_per_request: 120
+  boundary_window_words: 8
+  max_fragment_words: 4
+  api:
+    # 留空则回退到全局 api.*
+    key: ''
+    base_url: ''
+    model: ''
+    llm_support_json: true
+    request_timeout_sec: 30
+    request_retries: 5
+    request_retry_delay_sec: 1
+```
+
 ## 启动服务
 
 安装完成并修改配置后，通过以下命令启动后端服务：

@@ -63,6 +63,11 @@ Given word-level English ASR tokens, identify only the tokens that should be cor
 
 English correction scope: fix spelling or ASR errors, including misspelled proper nouns (person/brand/company/product names). You may only replace existing tokens; do not add, delete, or reorder tokens. No other modifications to the English text are allowed.
 
+## Decision Policy (Conservative, default = keep original)
+- Default action is KEEP the token unchanged.
+- Only correct when the source token is clearly wrong and the target is uniquely supported by local context.
+- If there is any ambiguity, do not correct.
+
 ## Rules
 1. You must use `start_key` as the primary key for each correction.
 2. Only return high-confidence corrections.
@@ -71,6 +76,10 @@ English correction scope: fix spelling or ASR errors, including misspelled prope
 5. Do NOT rewrite grammar or style.
 6. Do NOT normalize colloquial forms (e.g., gonna/wanna/gotta/kinda/sorta/ain't/y'all) under any circumstance.
 7. If uncertain, do not correct.
+8. If a token is a plausible acronym/proper noun/style token (e.g., ALL CAPS, TitleCase, mixed model tokens), do NOT "normalize" it to a more common word unless context is explicit and unambiguous.
+9. Never replace one plausible acronym with another plausible acronym based on guesswork (e.g., LAN <-> WAN). If both are plausible, keep original.
+10. Brand/event/product names may intentionally use uncommon spellings; do not auto-correct those based only on dictionary frequency or phonetic similarity.
+11. Do NOT output no-op suggestions. If `source` equals `target`, that item must be omitted.
 
 ## INPUT
 <tokens_json>
@@ -95,6 +104,57 @@ English correction scope: fix spelling or ASR errors, including misspelled prope
 ```
 
 If no corrections are needed, return `"corrections": []`.
+Note: Start your answer with ```json and end with ```, do not add any other text.
+""".strip()
+
+
+def get_rough_split_entity_repair_prompt(boundary_pairs_json: str):
+    return f"""
+## Role
+You are a subtitle boundary quality checker.
+
+## Task
+Given adjacent subtitle line pairs from rough splitting, detect ONLY the cases where a multi-word proper noun or named entity is broken across the line boundary.
+
+A valid correction means:
+- the entity is composed of a suffix of the left line + a prefix of the right line
+- both parts are contiguous at the boundary
+- confidence is high
+
+## Rules
+1. Scope is strict: proper nouns / named entities only.
+   Types include: person, company, organization, product/model, place, title, event.
+2. Do NOT propose grammatical/style rewrites.
+3. Do NOT propose fixes for generic phrases or common collocations.
+4. Return high-confidence items only. If unsure, skip.
+5. `left_words` and `right_words` are positive integers and must refer to boundary words only.
+6. Keep fragments short (usually 1-4 words per side).
+7. Do not return duplicate corrections for the same `pair_id`.
+
+## INPUT
+<boundary_pairs_json>
+{boundary_pairs_json}
+</boundary_pairs_json>
+
+## Output in only JSON format and no other text
+```json
+{{
+  "analysis": "Brief summary of boundary quality and confidence",
+  "corrections": [
+    {{
+      "pair_id": 12,
+      "left_words": 1,
+      "right_words": 2,
+      "entity": "5070 Ti Super",
+      "type": "product",
+      "confidence": "high",
+      "reason": "GPU model suffix split across boundary"
+    }}
+  ]
+}}
+```
+
+If no correction is needed, return `"corrections": []`.
 Note: Start your answer with ```json and end with ```, do not add any other text.
 """.strip()
 

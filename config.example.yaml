@@ -100,6 +100,28 @@ english_correction:
     request_retries: 5
     request_retry_delay_sec: 1
 
+# rough_split 后的专有名词断裂回并（LLM）
+rough_split_entity_repair:
+  # 是否启用（在 rough_split 后执行）
+  enabled: false
+  # 仅在使用空格分词语言时执行（例如英文）
+  only_when_space_joiner: true
+  # 每次请求发送的边界对数量（越大越省请求次数）
+  max_pairs_per_request: 120
+  # 发送给 LLM 的边界上下文窗口词数
+  boundary_window_words: 8
+  # 单侧最多允许移动的词数（脚本安全阈值）
+  max_fragment_words: 4
+  api:
+    # 留空则回退到全局 api.*
+    key: ''
+    base_url: ''
+    model: ''
+    llm_support_json: true
+    request_timeout_sec: 30
+    request_retries: 5
+    request_retry_delay_sec: 1
+
 # 是否在翻译结果中反映原文
 reflect_translate: true
 
