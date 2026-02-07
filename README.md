@@ -101,7 +101,8 @@ Remove-Item "$env:CONDA_PREFIX\Library\bin\ffmpeg.exe" -Force
 
 ## **界面展示**
 
-![image-20260204231244089](docs/images/image-20260204231244089.png)
+<img width="1402" height="939" alt="图片" src="https://github.com/user-attachments/assets/f0546d3f-45dd-47ed-adbf-b83f960e430b" />
+
 
 ## 环境要求 (必读)
 
