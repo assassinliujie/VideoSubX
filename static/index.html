@@ -12,7 +12,7 @@
     <div class="crt-overlay"></div>
     <div class="container">
         <header class="header">
-            <h1>SUBHUB v2.0</h1>
+            <h1>VideoSubX V1.0.2</h1>
             <div class="status-indicator" id="global-status">就绪</div>
         </header>
 
@@ -70,12 +70,13 @@
                 <section class="panel manual-section">
                     <h2>>> 手动操作</h2>
                     <div class="upload-area">
-                        <label>覆盖上传 (.ass):</label>
+                        <label for="file-upload" class="upload-label">覆盖上传 (.ass):</label>
                         <input type="file" id="file-upload" accept=".ass">
-                        <button id="btn-upload" class="btn secondary">上传文件</button>
+                        <button id="btn-upload" class="btn secondary upload-inline-btn">上传文件</button>
                     </div>
                     <div class="burn-control">
-                        <button id="btn-burn" class="btn action">>>> 执行烧录 <<<< /button>
+                        <button id="btn-retry-best" class="btn secondary">重试最佳下载</button>
+                        <button id="btn-burn" class="btn action">执行烧录</button>
                     </div>
                 </section>
 

@@ -2,6 +2,7 @@ import os,sys
 import glob
 import re
 import subprocess
+import time
 from core.utils import *
 
 def sanitize_filename(filename):
@@ -63,7 +64,7 @@ def update_ytdlp():
     from yt_dlp import YoutubeDL
     return YoutubeDL
 
-def download_video_ytdlp(url, save_path='output', resolution='1080', suffix=''):
+def download_video_ytdlp(url, save_path='output', resolution='1080', suffix='', max_retries=2, retry_delay=2):
     os.makedirs(save_path, exist_ok=True)
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best' if resolution == 'best' else 'worstvideo+bestaudio/best',
@@ -86,8 +87,20 @@ def download_video_ytdlp(url, save_path='output', resolution='1080', suffix=''):
 
     # Get YoutubeDL class after updating
     YoutubeDL = update_ytdlp()
-    with YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+    total_attempts = max(1, int(max_retries) + 1)
+    for attempt in range(1, total_attempts + 1):
+        try:
+            with YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            break
+        except Exception as e:
+            if attempt >= total_attempts:
+                raise
+            wait_seconds = max(0, int(retry_delay)) * attempt
+            rprint(f"[yellow]Download failed (attempt {attempt}/{total_attempts}): {e}[/yellow]")
+            rprint(f"[blue]Retrying download in {wait_seconds}s...[/blue]")
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
     
     # Check and rename files after download
     for file in os.listdir(save_path):

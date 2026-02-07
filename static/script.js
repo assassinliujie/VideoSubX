@@ -8,6 +8,7 @@ const btnStart = document.getElementById("btn-start");
 const btnContinue = document.getElementById("btn-continue");
 const btnStop = document.getElementById("btn-stop");
 const btnReset = document.getElementById("btn-reset");
+const btnRetryBest = document.getElementById("btn-retry-best");
 const btnBurn = document.getElementById("btn-burn");
 const btnUpload = document.getElementById("btn-upload");
 const fileInput = document.getElementById("file-upload");
@@ -391,6 +392,20 @@ btnReset.addEventListener("click", async () => {
         logToConsole(`!! 重置失败: ${err.message}`);
     }
 });
+
+if (btnRetryBest) {
+    btnRetryBest.addEventListener("click", async () => {
+        const url = elUrl.value.trim();
+        const payload = url ? { url } : {};
+
+        try {
+            const resp = await apiCall("/retry_best", "POST", payload);
+            logToConsole(`>> ${resp?.message || "最佳视频重试已启动"}`);
+        } catch (err) {
+            logToConsole(`!! 重试最佳视频下载失败: ${err.message}`);
+        }
+    });
+}
 
 btnBurn.addEventListener("click", async () => {
     try {

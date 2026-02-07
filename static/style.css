@@ -284,13 +284,57 @@ input[type="text"]:focus {
     margin-top: 5px;
 }
 
+#btn-select-video {
+    flex: 0 0 auto;
+    min-width: 110px;
+    white-space: nowrap;
+}
+
 .file-name-display {
     color: var(--dim-color);
     font-size: 0.85em;
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.upload-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: nowrap;
+}
+
+.upload-label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.upload-inline-btn {
+    flex: 0 0 auto;
+    min-width: 120px;
+    padding: 6px 12px;
+    white-space: nowrap;
+}
+
+#file-upload {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    max-width: none;
+}
+
+.burn-control {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.burn-control .btn {
+    flex: 1;
+    min-width: 170px;
 }
 
 /* Task List */

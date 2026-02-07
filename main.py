@@ -3,6 +3,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
@@ -39,6 +40,10 @@ app.add_middleware(
 
 class StartRequest(BaseModel):
     url: str
+
+
+class RetryBestRequest(BaseModel):
+    url: Optional[str] = None
 
 
 LOCAL_INPUT_DIR = Path("runtime/local_input")
@@ -146,6 +151,19 @@ async def continue_task():
 
     task_manager.continue_workflow()
     return {"message": "Continue task started", "status": state.status}
+
+
+@app.post("/api/retry_best")
+async def retry_best_task(req: Optional[RetryBestRequest] = None):
+    if _is_task_running():
+        return JSONResponse(status_code=400, content={"message": "Task already running"})
+
+    retry_url = ((req.url if req else "") or "").strip() or None
+    ok, message = task_manager.retry_download_best(retry_url)
+    if not ok:
+        return JSONResponse(status_code=400, content={"message": message})
+
+    return {"message": message, "status": state.status}
 
 
 @app.post("/api/burn")

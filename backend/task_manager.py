@@ -33,6 +33,9 @@ class TaskManager:
         self.stop_flag = threading.Event()
         self.local_video_filename = None
         self.local_video_source_path = None
+        self.last_workflow_url = None
+        self.best_download_thread = None
+        self.best_download_lock = threading.Lock()
 
     def set_local_video(self, filename: str, source_path: str = None):
         self.local_video_filename = os.path.basename(filename)
@@ -67,6 +70,12 @@ class TaskManager:
         if self.workflow_thread and self.workflow_thread.is_alive():
             targets.append(self.workflow_thread)
         targets.extend([t for t in self.worker_threads if t and t.is_alive()])
+        if (
+            self.best_download_thread
+            and self.best_download_thread.is_alive()
+            and self.best_download_thread not in targets
+        ):
+            targets.append(self.best_download_thread)
 
         killed = 0
         for thread_obj in targets:
@@ -100,6 +109,7 @@ class TaskManager:
             state.add_log("Workflow already running.")
             return
 
+        self.last_workflow_url = (url or "").strip()
         state.add_log("Auto-archiving previous run...")
         self.reset_workspace()
 
@@ -124,6 +134,55 @@ class TaskManager:
             state.add_log("Workflow force stop requested.")
         else:
             state.add_log("Stop requested. Waiting for blocking step to exit.")
+
+    def _run_download_best(self, url: str, manual_retry: bool = False):
+        if manual_retry:
+            state.set_status(TaskStatus.DOWNLOADING_BEST)
+            state.add_log("Manual retry: downloading best quality video...")
+
+        state.update_task_status("download_best", "running")
+        try:
+            if not manual_retry:
+                state.add_log("Task B: Downloading Best Quality Video...")
+
+            downloader.download_video_ytdlp(url, resolution="best", suffix="_best")
+            state.update_task_status("download_best", "completed")
+
+            if manual_retry:
+                state.set_status(TaskStatus.COMPLETED)
+                state.add_log("Manual retry complete: best quality video downloaded.")
+            else:
+                state.add_log("Task B: Best quality download complete.")
+        except Exception as e:
+            state.add_log(f"Task B Failed: {str(e)}")
+            state.update_task_status("download_best", "error")
+            if manual_retry:
+                state.set_status(TaskStatus.ERROR)
+        finally:
+            with self.best_download_lock:
+                if threading.current_thread() is self.best_download_thread:
+                    self.best_download_thread = None
+
+    def retry_download_best(self, url: str = None):
+        target_url = (url or self.last_workflow_url or "").strip()
+        if not target_url:
+            return False, "No source URL available for best-quality retry."
+
+        with self.best_download_lock:
+            if self.best_download_thread and self.best_download_thread.is_alive():
+                return False, "Best-quality download is already running."
+
+            self.last_workflow_url = target_url
+            thread = threading.Thread(
+                target=self._run_download_best,
+                args=(target_url, True),
+                name="_task_download_best_manual",
+                daemon=True,
+            )
+            self.best_download_thread = thread
+            thread.start()
+
+        return True, "Best-quality retry started."
 
     def _workflow_runner(self, url):
         try:
@@ -182,20 +241,11 @@ class TaskManager:
 
                     state.add_log(traceback.format_exc())
 
-            def run_download_best():
-                state.update_task_status("download_best", "running")
-                try:
-                    state.add_log("Task B: Downloading Best Quality Video...")
-                    downloader.download_video_ytdlp(url, resolution="best", suffix="_best")
-                    state.update_task_status("download_best", "completed")
-                    state.add_log("Task B: Best quality download complete.")
-                except Exception as e:
-                    state.add_log(f"Task B Failed: {str(e)}")
-                    state.update_task_status("download_best", "error")
-
             thread_a = threading.Thread(target=run_processing, name="_task_processing")
-            thread_b = threading.Thread(target=run_download_best, name="_task_download_best")
+            thread_b = threading.Thread(target=self._run_download_best, args=(url,), name="_task_download_best")
             self.worker_threads = [thread_a, thread_b]
+            with self.best_download_lock:
+                self.best_download_thread = thread_b
 
             thread_a.start()
             thread_b.start()
@@ -225,6 +275,8 @@ class TaskManager:
         if self.workflow_thread and self.workflow_thread.is_alive():
             state.add_log("Workflow already running.")
             return
+
+        self.last_workflow_url = None
 
         if local_video_filename:
             self.local_video_filename = os.path.basename(local_video_filename)
