@@ -41,8 +41,72 @@ class StartRequest(BaseModel):
     url: str
 
 
+LOCAL_INPUT_DIR = Path("runtime/local_input")
+
+
 def _is_task_running() -> bool:
     return state.status not in {TaskStatus.IDLE, TaskStatus.COMPLETED, TaskStatus.ERROR}
+
+
+def _load_allowed_formats():
+    from core.utils import load_key
+
+    allowed_formats = load_key("allowed_video_formats")
+    if not allowed_formats:
+        allowed_formats = ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "mp3", "wav", "m4a", "flac"]
+    return [ext.lower().lstrip(".") for ext in allowed_formats]
+
+
+def _sanitize_base_name(filename: str) -> str:
+    import re
+
+    base_name = os.path.splitext(os.path.basename(filename))[0]
+    base_name = re.sub(r'[<>:"/\\|?*]', "", base_name).strip(". ")
+    return base_name or "video"
+
+
+def _ensure_local_input_dir():
+    LOCAL_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _list_local_input_video_files():
+    _ensure_local_input_dir()
+    allowed_set = set(_load_allowed_formats())
+    files = []
+    for path in LOCAL_INPUT_DIR.iterdir():
+        if path.is_file() and path.suffix.lower().lstrip(".") in allowed_set:
+            files.append(path)
+    return sorted(files, key=lambda p: p.name.lower())
+
+
+def _clear_local_input_dir() -> int:
+    _ensure_local_input_dir()
+    removed = 0
+    for path in LOCAL_INPUT_DIR.iterdir():
+        try:
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+                removed += 1
+            elif path.is_dir():
+                shutil.rmtree(path)
+                removed += 1
+        except Exception:
+            continue
+    return removed
+
+
+def _resolve_single_local_input_file(clear_if_multiple: bool = False):
+    files = _list_local_input_video_files()
+    if len(files) == 1:
+        return files[0], 1, False
+    if len(files) == 0:
+        return None, 0, False
+
+    if clear_if_multiple:
+        _clear_local_input_dir()
+        task_manager.clear_local_video()
+        return None, len(files), True
+    return None, len(files), False
 
 
 @app.post("/api/start")
@@ -108,12 +172,7 @@ async def upload_sub(file: UploadFile = File(...)):
 
 @app.post("/api/upload_video")
 async def upload_video(file: UploadFile = File(...)):
-    from core.utils import load_key
-    import re
-
-    allowed_formats = load_key("allowed_video_formats")
-    if not allowed_formats:
-        allowed_formats = ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "mp3", "wav", "m4a", "flac"]
+    allowed_formats = _load_allowed_formats()
 
     ext = os.path.splitext(file.filename)[1].lower().lstrip(".")
     if ext not in allowed_formats:
@@ -125,11 +184,7 @@ async def upload_video(file: UploadFile = File(...)):
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
 
-    base_name = os.path.splitext(file.filename)[0]
-    base_name = re.sub(r'[<>:"/\\|?*]', "", base_name).strip(". ")
-    if not base_name:
-        base_name = "video"
-
+    base_name = _sanitize_base_name(file.filename)
     save_filename = f"{base_name}_best.{ext}"
     file_path = os.path.join(output_dir, save_filename)
 
@@ -143,25 +198,100 @@ async def upload_video(file: UploadFile = File(...)):
     return {"message": "Video uploaded successfully", "filename": save_filename}
 
 
+@app.get("/api/local_input/state")
+async def get_local_input_state():
+    local_file, file_count, cleared = _resolve_single_local_input_file(clear_if_multiple=True)
+
+    if file_count > 1:
+        state.add_log("Detected multiple files in local input cache. Cleared cache for safety.")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "state": "invalid_multiple",
+                "has_file": False,
+                "message": "Multiple files detected in local cache; cache was cleared. Please upload again.",
+                "cleared": cleared,
+            },
+        )
+
+    if not local_file:
+        task_manager.clear_local_video()
+        return {"state": "empty", "has_file": False, "file": None}
+
+    stat = local_file.stat()
+    return {
+        "state": "ready",
+        "has_file": True,
+        "file": {
+            "name": local_file.name,
+            "size": stat.st_size,
+            "time": stat.st_mtime,
+        },
+    }
+
+
+@app.delete("/api/local_input")
+async def clear_local_input():
+    removed = _clear_local_input_dir()
+    task_manager.clear_local_video()
+    state.add_log("Local input cache cleared.")
+    return {"message": "Local input cache cleared", "removed": removed}
+
+
+@app.post("/api/local_input/upload")
+async def upload_local_input(file: UploadFile = File(...)):
+    if _is_task_running():
+        return JSONResponse(status_code=400, content={"message": "Task already running"})
+
+    allowed_formats = _load_allowed_formats()
+    ext = os.path.splitext(file.filename)[1].lower().lstrip(".")
+    if ext not in allowed_formats:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Unsupported file format: .{ext}. Allowed: {', '.join(allowed_formats)}"},
+        )
+
+    _clear_local_input_dir()
+
+    base_name = _sanitize_base_name(file.filename)
+    save_filename = f"{base_name}_best.{ext}"
+    save_path = LOCAL_INPUT_DIR / save_filename
+
+    with open(save_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    task_manager.set_local_video(save_filename, source_path=str(save_path))
+    state.add_log(f"Cached local input file: {file.filename} -> {save_filename}")
+    return {"message": "Local input uploaded successfully", "filename": save_filename}
+
+
 @app.post("/api/start_local")
 async def start_local():
     if _is_task_running():
         return JSONResponse(status_code=400, content={"message": "Task already running"})
 
-    from core.downloader import find_video_files
+    local_file, file_count, cleared = _resolve_single_local_input_file(clear_if_multiple=True)
+    if file_count > 1:
+        state.add_log("Multiple files found in local cache. Cache cleared; waiting for re-upload.")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Multiple files found in local cache. Cache was cleared, please upload one file again.",
+                "cleared": cleared,
+            },
+        )
 
-    video_file = task_manager.get_local_video_path()
-    if not video_file:
-        try:
-            video_file = find_video_files()
-        except ValueError:
-            return JSONResponse(
-                status_code=400,
-                content={"message": "No video file found in output directory. Please upload a video first."},
-            )
+    if not local_file:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "No cached local file found. Please upload a local file first."},
+        )
 
-    state.add_log(f"Found local video file: {video_file}")
-    task_manager.start_local_workflow(local_video_filename=os.path.basename(video_file))
+    state.add_log(f"Using cached local file: {local_file.name}")
+    task_manager.start_local_workflow(
+        local_video_filename=local_file.name,
+        local_video_source_path=str(local_file),
+    )
     return {"message": "Local processing started", "status": state.status}
 
 

@@ -228,8 +228,42 @@ input[type="text"]:focus {
     box-shadow: 0 0 10px var(--text-color);
 }
 
+.btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+    background: #000;
+    color: var(--text-color);
+    box-shadow: none;
+}
+
 .btn:active {
     transform: scale(0.98);
+}
+
+.btn.upload-progress {
+    --upload-progress: 0%;
+    background: linear-gradient(
+        90deg,
+        rgba(255, 176, 0, 0.35) 0%,
+        rgba(255, 176, 0, 0.35) var(--upload-progress),
+        #000 var(--upload-progress),
+        #000 100%
+    );
+}
+
+.btn.upload-progress:hover {
+    background: linear-gradient(
+        90deg,
+        rgba(255, 176, 0, 0.35) 0%,
+        rgba(255, 176, 0, 0.35) var(--upload-progress),
+        #000 var(--upload-progress),
+        #000 100%
+    );
+    color: var(--text-color);
+    box-shadow: none;
 }
 
 .btn.danger {

@@ -31,9 +31,15 @@ class TaskManager:
         self.worker_threads = []
         self.stop_flag = threading.Event()
         self.local_video_filename = None
+        self.local_video_source_path = None
 
-    def set_local_video(self, filename: str):
+    def set_local_video(self, filename: str, source_path: str = None):
         self.local_video_filename = os.path.basename(filename)
+        self.local_video_source_path = source_path
+
+    def clear_local_video(self):
+        self.local_video_filename = None
+        self.local_video_source_path = None
 
     def get_local_video_path(self):
         if not self.local_video_filename:
@@ -210,7 +216,7 @@ class TaskManager:
         finally:
             self.worker_threads = []
 
-    def start_local_workflow(self, local_video_filename=None):
+    def start_local_workflow(self, local_video_filename=None, local_video_source_path=None):
         """Use uploaded local video/audio file and skip download steps."""
         if self.workflow_thread and self.workflow_thread.is_alive():
             state.add_log("Workflow already running.")
@@ -218,11 +224,32 @@ class TaskManager:
 
         if local_video_filename:
             self.local_video_filename = os.path.basename(local_video_filename)
+        if local_video_source_path:
+            self.local_video_source_path = local_video_source_path
 
-        preserve_files = [self.local_video_filename] if self.local_video_filename else None
+        if not self.local_video_filename:
+            state.add_log("Local workflow aborted: missing local video filename.")
+            state.set_status(TaskStatus.ERROR)
+            return
+
+        source_path = self.local_video_source_path
 
         state.add_log("Auto-archiving previous run...")
-        self.reset_workspace(preserve_files=preserve_files)
+        self.reset_workspace()
+
+        if not source_path or not os.path.exists(source_path):
+            state.add_log("Local workflow aborted: cached local input file not found.")
+            state.set_status(TaskStatus.ERROR)
+            return
+
+        output_target = os.path.join("output", self.local_video_filename)
+        try:
+            shutil.copy2(source_path, output_target)
+            state.add_log(f"Prepared local input file: {self.local_video_filename}")
+        except Exception as e:
+            state.add_log(f"Local workflow aborted: failed to prepare input file. Reason: {e}")
+            state.set_status(TaskStatus.ERROR)
+            return
 
         self.stop_flag.clear()
 
