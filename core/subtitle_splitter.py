@@ -67,19 +67,45 @@ def split_align_subs(src_lines: List[str], tr_lines: List[str]):
     to_split = []
     for i, (src, tr) in enumerate(zip(src_lines, tr_lines)):
         src, tr = str(src), str(tr)
-        if len(src) > MAX_SUB_LENGTH or calc_len(tr) * TARGET_SUB_MULTIPLIER > MAX_SUB_LENGTH:
-            to_split.append(i)
+        src_over = len(src) > MAX_SUB_LENGTH
+        tr_over = calc_len(tr) * TARGET_SUB_MULTIPLIER > MAX_SUB_LENGTH
+        if src_over or tr_over:
+            # Priority: translation overflow first.
+            mode = "split+align_translation" if tr_over else "split_source_only"
+            to_split.append(
+                {
+                    "index": i,
+                    "mode": mode,
+                    "src_over": src_over,
+                    "tr_over": tr_over,
+                }
+            )
             table = Table(title=f"📏 Line {i} needs to be split")
             table.add_column("Type", style="cyan")
             table.add_column("Content", style="magenta")
             table.add_row("Source Line", src)
             table.add_row("Target Line", tr)
+            table.add_row("Trigger", f"src_over={src_over}, tr_over={tr_over}, mode={mode}")
             console.print(table)
     
     @except_handler("Error in split_align_subs")
-    def process(i):
+    def process(split_item):
+        i = split_item["index"]
+        mode = split_item["mode"]
         split_src = split_sentence(src_lines[i], num_parts=2).strip()
-        src_parts, tr_parts, tr_remerged = align_subs(src_lines[i], tr_lines[i], split_src)
+
+        if mode == "split+align_translation":
+            src_parts, tr_parts, tr_remerged = align_subs(src_lines[i], tr_lines[i], split_src)
+        elif mode == "split_source_only":
+            src_parts = [part.strip() for part in split_src.split("\n") if str(part).strip()]
+            if not src_parts:
+                src_parts = [str(src_lines[i]).strip()]
+            tr_parts = [str(tr_lines[i]).strip()] * len(src_parts)
+            # Keep remerged translation as a single line for the audio chain.
+            tr_remerged = str(tr_lines[i]).strip()
+        else:
+            raise ValueError(f"Unsupported split mode: {mode}")
+
         src_lines[i] = src_parts
         tr_lines[i] = tr_parts
         remerged_tr_lines[i] = tr_remerged
