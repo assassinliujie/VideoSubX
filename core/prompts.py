@@ -466,6 +466,78 @@ Note: Start you answer with ```json and end with ```, do not add any other text.
 '''
     return prompt_single_pass.strip()
 
+def get_prompt_single_pass_full_polish(source_lines, draft_lines, summary_prompt=None):
+    TARGET_LANGUAGE = load_key("target_language")
+    src_language = load_key("whisper.detected_language")
+    line_count = len(draft_lines)
+
+    source_block = "\n".join(
+        f"[{i}] {str(line)}" for i, line in enumerate(source_lines, 1)
+    )
+    draft_block = "\n".join(
+        f"[{i}] {str(line)}" for i, line in enumerate(draft_lines, 1)
+    )
+
+    json_format = """{
+  "1": {"free": "第1行润色结果"},
+  "2": {"free": "第2行润色结果"},
+  "...": {"free": "..."},
+  "N": {"free": "第N行润色结果"}
+}"""
+    summary_prompt = summary_prompt if summary_prompt else "N/A"
+
+    prompt = f'''
+## Role
+你是资深中文字幕本地化润色专家，熟悉中英双语语义和中文日常表达习惯。
+
+## Task
+给定“全文{src_language}原文分行”和“全文{TARGET_LANGUAGE}草译分行”，请对{TARGET_LANGUAGE}草译做一次全文统一润色。
+目标是提升自然度、连贯性、可读性与术语一致性，同时严格保持逐行对齐。
+
+### Hard Constraints
+1. 必须全文一次性处理，但输出必须逐行对应输入行号。
+2. 输出总行数必须与输入完全一致（共 {line_count} 行）。
+3. 严禁合并、拆分、重排、增删行。
+4. 每一行输出必须是单行文本，禁止在行内再换行。
+5. 对应原文非空的行，译文不得为空。
+6. 不允许改变原文事实、立场、褒贬色彩，不允许过度引申或过度翻译。
+7. 专有名词（人名、地名、机构名、产品名等）译法必须全文统一。
+8. 同一术语和同类表达必须全文用词统一。
+9. 不要对{src_language}原文做任何改写或纠错；本任务只润色{TARGET_LANGUAGE}译文。
+
+### Style and Quality Rules
+1. 允许按中文习惯调整语序（含倒装、局部换位、跨短句重组），但不得破坏行对齐约束。
+2. 优先保证“信、达、雅”：忠实原意、表达通顺、风格自然。
+3. 可适度补充中文语气连接（如“则/那/故/竟”等）以增强连贯性，但不得凭空添加信息。
+4. 对英文口语连接词（如 but/so）若仅为口头衔接，不要机械译成“但/所以/然而”。
+5. 可适度使用地道中文表达（含成语）增强本地化，但避免生硬堆砌。
+6. 字幕应尽量简洁，单行长度以“易读”为优先，理想约 15 字左右（软约束，不得因压缩而丢信息）。
+7. 标点规则：除问号、感叹号、引号外，其余标点尽量弱化处理（必要时用空格替代），保持画面阅读简洁。
+
+### Content Summary
+{summary_prompt}
+
+## INPUT
+<source_subtitles>
+{source_block}
+</source_subtitles>
+
+<draft_translation>
+{draft_block}
+</draft_translation>
+
+## Output in only JSON format and no other text
+仅输出 JSON，不要输出任何解释或额外文本。
+JSON 顶层键必须为字符串数字 "1" 到 "{line_count}"，每项格式如下：
+```json
+{json_format}
+```
+
+Note: Start your answer with ```json and end with ```, do not add any other text.
+'''.strip()
+
+    return prompt
+
 
 ## ================================================================
 # @ step6_splitforsub.py

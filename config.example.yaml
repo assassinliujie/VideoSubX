@@ -125,6 +125,20 @@ rough_split_entity_repair:
 # 是否在翻译结果中反映原文
 reflect_translate: true
 
+# single-pass 融合翻译后的全文润色（实验性）
+# 触发条件：仅当 reflect_translate=false 时自动执行（无需单独开关）
+single_pass_full_polish:
+  api:
+    # 留空则回退到全局 api.*
+    key: ''
+    base_url: ''
+    model: ''
+    llm_support_json: true
+    request_timeout_sec: 120
+    # 失败后重试次数（不含首次），默认 2
+    request_retries: 2
+    request_retry_delay_sec: 1
+
 # 是否在提取专业术语后暂停，允许用户手动调整术语表
 pause_before_translate: false
 

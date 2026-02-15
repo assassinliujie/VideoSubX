@@ -2,6 +2,7 @@ import pandas as pd
 import json
 import concurrent.futures
 from core.translate_lines import translate_lines
+from core.prompts import get_prompt_single_pass_full_polish
 from core.summarizer import search_things_to_note_in_prompt
 from core.utils.text_trim import check_len_then_trim
 from core.subtitle_generator import align_timestamp
@@ -50,6 +51,76 @@ def translate_chunk(chunk, chunks, theme_prompt, i):
 def similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
 
+def _load_single_pass_full_polish_api_settings():
+    defaults = {
+        "key": "",
+        "base_url": "",
+        "model": "",
+        "llm_support_json": True,
+        "request_timeout_sec": 120,
+        "request_retries": 2,
+        "request_retry_delay_sec": 1,
+    }
+    resolved = {}
+    for k, v in defaults.items():
+        try:
+            resolved[k] = load_key(f"single_pass_full_polish.api.{k}")
+        except Exception:
+            resolved[k] = v
+    return resolved
+
+def polish_single_pass_full_text(src_lines, draft_lines, summary_prompt=None):
+    if len(src_lines) != len(draft_lines):
+        raise ValueError("Full polish input mismatch: source and translation line counts are different.")
+
+    line_count = len(draft_lines)
+    prompt = get_prompt_single_pass_full_polish(src_lines, draft_lines, summary_prompt)
+    required_keys = [str(i) for i in range(1, line_count + 1)]
+
+    def valid_full_polish(response_data):
+        if not isinstance(response_data, dict):
+            return {"status": "error", "message": "Response is not a JSON object."}
+
+        missing_keys = [k for k in required_keys if k not in response_data]
+        if missing_keys:
+            return {
+                "status": "error",
+                "message": f"Missing required key(s): {', '.join(missing_keys[:10])}",
+            }
+
+        for i in range(1, line_count + 1):
+            key = str(i)
+            item = response_data.get(key)
+            if not isinstance(item, dict):
+                return {"status": "error", "message": f"Invalid item format at key {key}."}
+            if "free" not in item:
+                return {"status": "error", "message": f"Missing `free` in item {key}."}
+
+            polished = str(item["free"]).replace("\n", " ").strip()
+            src = str(src_lines[i - 1]).strip()
+            if not polished and src:
+                return {"status": "error", "message": f"Empty polished line at key {key}."}
+
+        return {"status": "success", "message": "Full polish completed"}
+
+    api_settings = _load_single_pass_full_polish_api_settings()
+    result = ask_gpt(
+        prompt,
+        resp_type="json",
+        valid_def=valid_full_polish,
+        log_title="single_pass_full_polish",
+        api_settings=api_settings,
+    )
+    polished_lines = [
+        str(result[str(i)]["free"]).replace("\n", " ").strip()
+        for i in range(1, line_count + 1)
+    ]
+
+    if len(polished_lines) != line_count:
+        raise ValueError("Full polish output mismatch: line count differs from input.")
+
+    return polished_lines
+
 # 🚀 翻译所有块的主函数
 @check_file_exists(_4_2_TRANSLATION)
 def translate_all():
@@ -93,6 +164,18 @@ def translate_all():
             console.print(f"[yellow]Warning: Similar match found (chunk {i}, similarity: {best_match[1]:.3f})[/yellow]")
             
         trans_text.extend(best_match[0][2].split('\n'))
+
+    # single-pass mode: add one full-text polish pass after chunk translation
+    if not load_key("reflect_translate"):
+        console.print("[cyan]Single-pass mode detected: running full-text polish...[/cyan]")
+        try:
+            trans_text = polish_single_pass_full_text(src_text, trans_text, theme_prompt)
+            console.print("[green]✅ Full-text polish completed.[/green]")
+        except Exception as e:
+            console.print(
+                "[yellow]Warning: Full-text polish failed; fallback to original single-pass result. "
+                f"Reason: {e}[/yellow]"
+            )
     
     # 裁剪过长的翻译文本
     df_text = pd.read_excel(_2_CLEANED_CHUNKS)

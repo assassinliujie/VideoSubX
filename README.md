@@ -191,7 +191,7 @@ api:
 ```yaml
 # 是否启用二段式翻译（直译 + 润色）
 # true: 先直译再润色（两次调用，质量更高，速度更慢）
-# false: 单次融合翻译（一次调用，更快）
+# false: 单次融合翻译（一次调用，更快），并在翻译后自动执行一次“全文输入/全文输出”润色（实验性）
 reflect_translate: true
 ```
 
@@ -243,6 +243,25 @@ rough_split_entity_repair:
     llm_support_json: true
     request_timeout_sec: 30
     request_retries: 5
+    request_retry_delay_sec: 1
+```
+
+### 7. single-pass 全文润色（新增，实验性）
+
+当 `reflect_translate: false` 时，流程会在单次融合翻译完成后，自动追加一次“全文输入 / 全文输出”的统一润色。
+该步骤会严格校验行号与行数，要求输出与输入逐行对应；若失败会自动回退到原始 single-pass 翻译结果，不中断后续流程。
+
+```yaml
+single_pass_full_polish:
+  api:
+    # 留空则回退到全局 api.*
+    key: ''
+    base_url: ''
+    model: ''
+    llm_support_json: true
+    request_timeout_sec: 120
+    # 失败后重试次数（不含首次），默认 2
+    request_retries: 2
     request_retry_delay_sec: 1
 ```
 
