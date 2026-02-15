@@ -69,14 +69,24 @@ python install_mfa.py
 
 ### 启用方式
 
+> 升级提示：新增 `alignment.mode` 数字选择器，`config.yaml` 需要同步升级；旧的 `mfa.enabled` / `disable_all_align` 逻辑已移除。
+
 编辑 `config.yaml`：
 
 ```yaml
+alignment:
+  mode: 4  # 1=raw, 2=stable-ts align only, 3=mfa only, 4=stable-ts + mfa
+
 mfa:
-  enabled: true
   acoustic_model: 'english_mfa'  # 或 mandarin_mfa, japanese_mfa 等
   dictionary: 'english_mfa'
 ```
+
+对齐模式说明：
+- `1`：`raw`，无对齐（仅 ASR 原始结果）
+- `2`：`stable-ts align only`
+- `3`：`mfa only`
+- `4`：`stable-ts + mfa`（先 `stable-ts align_words`，再 MFA）
 
 ### ⚠️ 常见问题
 

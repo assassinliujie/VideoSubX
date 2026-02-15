@@ -147,11 +147,20 @@ min_trim_duration: 3.5  # 短于此值的字幕不会被裁剪
 
 ## ======================== 实验性功能 ======================== ##
 
+# 对齐模式（统一开关）
+# 选择器（填写数字）:
+# 1 = raw（无对齐，仅 ASR 原始结果）
+# 2 = stable-ts align only
+# 3 = mfa only
+# 4 = stable-ts + mfa（先 stable-ts，再 MFA）
+alignment:
+  mode: 2
+
 # MFA 强制对齐（实验性功能）
 # 使用 Montreal Forced Aligner 优化词级时间轴精度
 # ⚠️ 需要先运行 python install_mfa.py 安装 MFA
+# 当 alignment.mode=3 或 4 时生效
 mfa:
-  enabled: false
   # 声学模型，支持: english_mfa, mandarin_mfa, japanese_mfa 等
   # 完整列表: https://mfa-models.readthedocs.io/en/latest/acoustic/
   acoustic_model: 'english_mfa'

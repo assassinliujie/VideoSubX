@@ -221,7 +221,7 @@ def main():
     print("   安装完成！")
     print("="*60)
     print("\n使用方法:")
-    print("   1. 在 config.yaml 中设置 mfa.enabled: true")
+    print("   1. 在 config.yaml 中设置 alignment.mode: 3 或 4")
     print("   2. 正常运行项目，MFA 会自动优化时间轴")
     print("\n如需更换语言模型，请修改 config.yaml 中的:")
     print("   mfa.acoustic_model 和 mfa.dictionary")
