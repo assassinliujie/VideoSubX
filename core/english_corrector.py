@@ -6,7 +6,7 @@ from typing import Dict, List
 import pandas as pd
 
 from core.prompts import get_english_correction_prompt
-from core.utils import ask_gpt, load_key, rprint
+from core.utils import ask_gpt, check_file_exists, load_key, rprint
 from core.utils.paths import _2_CLEANED_CHUNKS
 
 _COLLOQUIAL_FORMS = {
@@ -18,6 +18,10 @@ _COLLOQUIAL_FORMS = {
     "ain't",
     "y'all",
 }
+
+CHANGELOG_PATH = "output/log/english_correction_changelog.csv"
+BACKUP_PATH = "output/log/cleaned_chunks_before_english_correction.xlsx"
+COMPLETION_MARKER_PATH = "output/log/english_correction_completed.json"
 
 
 def _load_key_or_default(key, default):
@@ -45,6 +49,28 @@ def _start_key(value) -> str:
 
 def _normalize_word(text: str) -> str:
     return str(text).strip().strip('"').strip()
+
+
+def _build_audit_row(run_id: str, status: str = "skipped", skip_reason: str = "", **overrides):
+    row = {
+        "run_id": run_id,
+        "status": status,
+        "skip_reason": skip_reason,
+        "start_key": "",
+        "source": "",
+        "target": "",
+        "confidence": "",
+        "type": "",
+        "reason": "",
+        "row_index": "",
+        "row_start": "",
+        "before": "",
+        "after": "",
+    }
+    for key, value in overrides.items():
+        if key in row:
+            row[key] = value
+    return row
 
 
 def _build_tokens(df: pd.DataFrame) -> List[Dict]:
@@ -108,21 +134,17 @@ def _apply_corrections(df: pd.DataFrame, corrections: List[Dict], run_id: str):
         reason = str(item.get("reason", "")).strip()
         corr_type = str(item.get("type", "")).strip()
 
-        record = {
-            "run_id": run_id,
-            "status": "skipped",
-            "skip_reason": "",
-            "start_key": start_key,
-            "source": source,
-            "target": target,
-            "confidence": confidence,
-            "type": corr_type,
-            "reason": reason,
-            "row_index": "",
-            "row_start": "",
-            "before": "",
-            "after": "",
-        }
+        record = _build_audit_row(
+            run_id,
+            status="skipped",
+            skip_reason="",
+            start_key=start_key,
+            source=source,
+            target=target,
+            confidence=confidence,
+            type=corr_type,
+            reason=reason,
+        )
 
         if not start_key or not source or not target:
             record["skip_reason"] = "missing_required_fields"
@@ -181,7 +203,7 @@ def _apply_corrections(df: pd.DataFrame, corrections: List[Dict], run_id: str):
 def _write_changelog(rows: List[Dict]):
     if not rows:
         return None
-    log_path = "output/log/english_correction_changelog.csv"
+    log_path = CHANGELOG_PATH
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     df_log = pd.DataFrame(rows)
     df_log.insert(0, "logged_at", datetime.now().isoformat(timespec="seconds"))
@@ -190,6 +212,21 @@ def _write_changelog(rows: List[Dict]):
     return log_path
 
 
+def _write_completion_marker(run_id: str, outcome: str, suggested: int, applied: int):
+    os.makedirs(os.path.dirname(COMPLETION_MARKER_PATH), exist_ok=True)
+    payload = {
+        "run_id": run_id,
+        "completed_at": datetime.now().isoformat(timespec="seconds"),
+        "outcome": outcome,
+        "suggested": int(suggested),
+        "applied": int(applied),
+    }
+    with open(COMPLETION_MARKER_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return COMPLETION_MARKER_PATH
+
+
+@check_file_exists(COMPLETION_MARKER_PATH)
 def correct_english_asr_tokens():
     if not _load_bool_key("english_correction.enabled", False):
         rprint("[dim]English correction disabled, skip.[/dim]")
@@ -218,6 +255,7 @@ def correct_english_asr_tokens():
     prompt = get_english_correction_prompt(tokens_json)
     rprint(f"[cyan]Running English ASR correction on {len(tokens)} tokens...[/cyan]")
 
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     response = ask_gpt(
         prompt,
         resp_type="json",
@@ -227,18 +265,34 @@ def correct_english_asr_tokens():
     )
     corrections = response.get("corrections", [])
     if not corrections:
+        log_path = _write_changelog(
+            [
+                _build_audit_row(
+                    run_id,
+                    status="no_changes",
+                    skip_reason="no_corrections_returned",
+                    reason="LLM returned corrections=[]",
+                )
+            ]
+        )
+        _write_completion_marker(run_id, outcome="no_corrections", suggested=0, applied=0)
+        if log_path:
+            rprint(f"[dim]English correction changelog: {log_path} (run_id={run_id})[/dim]")
         rprint("[green]No English ASR corrections suggested.[/green]")
         return
 
-    backup_path = "output/log/cleaned_chunks_before_english_correction.xlsx"
-    if not os.path.exists(backup_path):
-        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
-        df.to_excel(backup_path, index=False)
-        rprint(f"[dim]Backup created: {backup_path}[/dim]")
+    if not os.path.exists(BACKUP_PATH):
+        os.makedirs(os.path.dirname(BACKUP_PATH), exist_ok=True)
+        df.to_excel(BACKUP_PATH, index=False)
+        rprint(f"[dim]Backup created: {BACKUP_PATH}[/dim]")
 
-    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     applied, audit_rows = _apply_corrections(df, corrections, run_id=run_id)
+    if applied > 0:
+        df.to_excel(_2_CLEANED_CHUNKS, index=False)
+
     log_path = _write_changelog(audit_rows)
+    outcome = "completed" if applied > 0 else "no_safe_replacements"
+    _write_completion_marker(run_id, outcome=outcome, suggested=len(corrections), applied=applied)
     if log_path:
         rprint(f"[dim]English correction changelog: {log_path} (run_id={run_id})[/dim]")
 
@@ -246,7 +300,6 @@ def correct_english_asr_tokens():
         rprint("[yellow]English corrections returned, but no safe replacements were applied.[/yellow]")
         return
 
-    df.to_excel(_2_CLEANED_CHUNKS, index=False)
     rprint(f"[green]Applied {applied} English token corrections to {_2_CLEANED_CHUNKS}[/green]")
 
 

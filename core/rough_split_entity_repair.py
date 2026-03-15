@@ -50,6 +50,30 @@ def _normalize_alnum(text: str) -> str:
     return "".join(chars)
 
 
+def _build_audit_row(run_id: str, status: str = "skipped", skip_reason: str = "", **overrides):
+    row = {
+        "run_id": run_id,
+        "status": status,
+        "skip_reason": skip_reason,
+        "pair_id": "",
+        "left_words": "",
+        "right_words": "",
+        "entity": "",
+        "type": "",
+        "confidence": "",
+        "reason": "",
+        "direction": "",
+        "before_left": "",
+        "before_right": "",
+        "after_left": "",
+        "after_right": "",
+    }
+    for key, value in overrides.items():
+        if key in row:
+            row[key] = value
+    return row
+
+
 def _chunk_list(items: List[Dict], chunk_size: int):
     for i in range(0, len(items), chunk_size):
         yield items[i : i + chunk_size]
@@ -201,7 +225,7 @@ def _deduplicate_by_pair(suggestions: List[Dict]) -> List[Dict]:
     return [best[k]["item"] for k in sorted(best.keys())]
 
 
-def _apply_suggestions(lines: List[str], suggestions: List[Dict]):
+def _apply_suggestions(lines: List[str], suggestions: List[Dict], run_id: str):
     max_fragment_words = _to_int(
         _load_key_or_default("rough_split_entity_repair.max_fragment_words", 4),
         default=4,
@@ -213,29 +237,23 @@ def _apply_suggestions(lines: List[str], suggestions: List[Dict]):
         default=20,
         min_value=5,
     )
-    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     audit_rows = []
     applied = 0
 
     for item in _deduplicate_by_pair(suggestions):
-        record = {
-            "run_id": run_id,
-            "status": "skipped",
-            "skip_reason": "",
-            "pair_id": item.get("pair_id"),
-            "left_words": item.get("left_words"),
-            "right_words": item.get("right_words"),
-            "entity": _normalize_space(item.get("entity", "")),
-            "type": str(item.get("type", "")).strip(),
-            "confidence": str(item.get("confidence", "")).strip().lower(),
-            "reason": str(item.get("reason", "")).strip(),
-            "direction": "",
-            "before_left": "",
-            "before_right": "",
-            "after_left": "",
-            "after_right": "",
-        }
+        record = _build_audit_row(
+            run_id,
+            status="skipped",
+            skip_reason="",
+            pair_id=item.get("pair_id"),
+            left_words=item.get("left_words"),
+            right_words=item.get("right_words"),
+            entity=_normalize_space(item.get("entity", "")),
+            type=str(item.get("type", "")).strip(),
+            confidence=str(item.get("confidence", "")).strip().lower(),
+            reason=str(item.get("reason", "")).strip(),
+        )
 
         try:
             pair_id = int(item.get("pair_id"))
@@ -386,8 +404,21 @@ def repair_rough_split_entities(file_path: str):
         return
 
     rprint(f"[cyan]Running rough split entity repair on {len(boundary_pairs)} boundaries...[/cyan]")
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     suggestions = _collect_suggestions(boundary_pairs)
     if not suggestions:
+        log_path = _write_changelog(
+            [
+                _build_audit_row(
+                    run_id,
+                    status="no_changes",
+                    skip_reason="no_corrections_returned",
+                    reason="LLM returned corrections=[]",
+                )
+            ]
+        )
+        if log_path:
+            rprint(f"[dim]Entity repair changelog: {log_path}[/dim]")
         rprint("[green]No rough split entity repairs suggested.[/green]")
         return
 
@@ -397,7 +428,11 @@ def repair_rough_split_entities(file_path: str):
             f.write("\n".join(lines).strip() + "\n")
         rprint(f"[dim]Backup created: {BACKUP_PATH}[/dim]")
 
-    applied, audit_rows = _apply_suggestions(lines, suggestions)
+    applied, audit_rows = _apply_suggestions(lines, suggestions, run_id=run_id)
+    if applied > 0:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines).strip() + "\n")
+
     log_path = _write_changelog(audit_rows)
     if log_path:
         rprint(f"[dim]Entity repair changelog: {log_path}[/dim]")
@@ -406,8 +441,6 @@ def repair_rough_split_entities(file_path: str):
         rprint("[yellow]Entity repairs returned, but no safe changes were applied.[/yellow]")
         return
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines).strip() + "\n")
     rprint(f"[green]Applied {applied} rough split entity repairs to {file_path}[/green]")
 
 

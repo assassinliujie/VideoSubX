@@ -209,7 +209,7 @@ reflect_translate: true
 
 该步骤会在 `cleaned_chunks.xlsx` 生成后执行，向 LLM 发送词级英文识别结果，返回基于 `start_key` 的替换建议并应用到原文件。  
 校正规则是“仅允许改单词，不允许增删词、不允许语法改写”。
-每次执行会追加写入 `output/log/english_correction_changelog.csv`，可直接查看每条建议是否被应用及跳过原因。
+每次执行会追加写入 `output/log/english_correction_changelog.csv`，即使 LLM 返回空建议也会记录一条 no-op 日志；同时会写入完成标记，供“继续任务”正确跳过该步骤。
 
 ```yaml
 english_correction:
@@ -236,7 +236,7 @@ LLM 只负责识别边界断裂，真正拼接由脚本执行，并根据行长�
 - 把下一句句首并回上一句句末
 - 或把上一句句末并到下一句句首
 
-每次执行会追加写入 `output/log/rough_split_entity_repair_changelog.csv`，并在首次运行时备份 `output/log/rough_split_before_entity_repair.txt`。
+每次执行会追加写入 `output/log/rough_split_entity_repair_changelog.csv`，即使 LLM 返回空建议也会记录一条 no-op 日志，并在首次运行时备份 `output/log/rough_split_before_entity_repair.txt`。
 
 ```yaml
 rough_split_entity_repair:
