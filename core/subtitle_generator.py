@@ -44,7 +44,7 @@ PlayResY: 1080
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: 英,{english_font},{font_size},&H00FFFFFF,&H000000FF,&H003B3C3D,&H00000000,0,0,0,0,100,100,1,0,1,2,0.2,2,0,0,5,1
-Style: 中,{chinese_font},{font_size},&H00FFFFFF,&H000000FF,&H00723208,&H00000000,-1,0,0,0,110,100,1,0,1,2.5,1.5,2,0,0,57,1
+Style: 中,{chinese_font},{font_size},&H00FFFFFF,&H000000FF,&H00200090,&H00000000,-1,0,0,0,110,100,1,0,1,5,3,2,0,0,57,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
