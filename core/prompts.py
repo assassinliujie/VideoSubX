@@ -466,75 +466,116 @@ Note: Start you answer with ```json and end with ```, do not add any other text.
 '''
     return prompt_single_pass.strip()
 
-def get_prompt_single_pass_full_polish(source_lines, draft_lines, summary_prompt=None):
+def get_prompt_single_pass_full_polish(
+    source_lines,
+    draft_lines,
+    summary_prompt=None,
+    start_line=1,
+    polished_prefix_lines=None,
+):
     TARGET_LANGUAGE = load_key("target_language")
     src_language = load_key("whisper.detected_language")
     line_count = len(draft_lines)
+    start_line = max(1, int(start_line))
+    polished_prefix_lines = polished_prefix_lines or []
 
-    source_block = "\n".join(
-        f"[{i}] {str(line)}" for i, line in enumerate(source_lines, 1)
+    remaining_source_block = "\n".join(
+        f"[{i}] {str(line)}"
+        for i, line in enumerate(source_lines[start_line - 1 :], start_line)
     )
-    draft_block = "\n".join(
-        f"[{i}] {str(line)}" for i, line in enumerate(draft_lines, 1)
+    remaining_draft_block = "\n".join(
+        f"[{i}] {str(line)}"
+        for i, line in enumerate(draft_lines[start_line - 1 :], start_line)
     )
-
-    json_format = """{
-  "1": {"free": "第1行润色结果"},
-  "2": {"free": "第2行润色结果"},
-  "...": {"free": "..."},
-  "N": {"free": "第N行润色结果"}
-}"""
+    polished_prefix_block = "\n".join(
+        f"[{i}] {str(line)}"
+        for i, line in enumerate(polished_prefix_lines[: start_line - 1], 1)
+    )
     summary_prompt = summary_prompt if summary_prompt else "N/A"
 
+    if start_line > 1:
+        resume_notice = f"""
+### Resume Notice
+1. 前 {start_line - 1} 行已润色完成，仅作为术语、语气、文风和上下文参考。
+2. 不要重写、重复输出或改写第 1 行到第 {start_line - 1} 行。
+3. 你必须从第 {start_line} 行开始继续润色，并且仅输出第 {start_line} 行到第 {line_count} 行。
+4. 若你需要参考前文，请只参考“已完成润色参考”区块，不要要求重新提供前 {start_line - 1} 行原文。
+""".strip()
+    else:
+        resume_notice = """
+### Resume Notice
+1. 当前没有已完成前缀，请从第 1 行开始润色。
+2. 你必须从第 1 行连续输出到最后一行，不能跳号。
+""".strip()
+
     prompt = f'''
-## Role
-你是资深中文字幕本地化润色专家，熟悉中英双语语义和中文日常表达习惯。
+  ## Role
+  你是资深中文字幕本地化润色专家，熟悉中英双语语义和中文日常表达习惯。
 
-## Task
-给定“全文{src_language}原文分行”和“全文{TARGET_LANGUAGE}草译分行”，请对{TARGET_LANGUAGE}草译做一次全文统一润色。
-目标是提升自然度、连贯性、可读性与术语一致性，同时严格保持逐行对齐。
+  ## Task
+  给定“全文{src_language}原文分行”和“全文{TARGET_LANGUAGE}草译分行”，请对{TARGET_LANGUAGE}草译做一次全文统一润色。
+  目标是提升自然度、连贯性、可读性与术语一致性，同时严格保持逐行对齐。
+  本次任务需要从第 {start_line} 行开始继续处理，共需产出第 {start_line} 行到第 {line_count} 行。
 
-### Hard Constraints
-1. 必须全文一次性处理，但输出必须逐行对应输入行号。
-2. 输出总行数必须与输入完全一致（共 {line_count} 行）。
-3. 严禁合并、拆分、重排、增删行。
-4. 每一行输出必须是单行文本，禁止在行内再换行。
-5. 对应原文非空的行，译文不得为空。
-6. 不允许改变原文事实、立场、褒贬色彩，不允许过度引申或过度翻译。
-7. 专有名词（人名、地名、机构名、产品名等）译法必须全文统一。
-8. 同一术语和同类表达必须全文用词统一。
-9. 不要对{src_language}原文做任何改写或纠错；本任务只润色{TARGET_LANGUAGE}译文。
+  ### Hard Constraints
+  1. 必须从全文角度统一把握术语、文风和上下文，但本次输出只能覆盖第 {start_line} 行到第 {line_count} 行。
+  2. 严禁合并、拆分、重排、增删行。
+  3. 每一行输出必须是单行文本，禁止在行内再换行。
+  4. 对应原文非空的行，译文不得为空。
+  5. 不允许改变原文事实、立场、褒贬色彩，不允许过度引申或过度翻译。
+  6. 专有名词（人名、地名、机构名、产品名等）译法必须全文统一。
+  7. 同一术语和同类表达必须全文用词统一。
+  8. 不要对{src_language}原文做任何改写或纠错；本任务只润色{TARGET_LANGUAGE}译文。
+  9. 输出必须严格按行号顺序连续给出，不能跳号。
+  10. 每一行输出格式必须严格为：`[行号] 润色结果`
+  11. 必须使用半角方括号和阿拉伯数字行号，例如 `[37] 文本`
+  12. 禁止输出 JSON、代码块、解释、标题、前言、后记或任何额外文本。
 
-### Style and Quality Rules
-1. 允许按中文习惯调整语序（含倒装、局部换位、跨短句重组），但不得破坏行对齐约束。
-2. 优先保证“信、达、雅”：忠实原意、表达通顺、风格自然。
+  ### Style and Quality Rules
+  1. 允许按中文习惯调整语序（含倒装、局部换位、跨短句重组），但不得破坏行对齐约束。
+  2. 优先保证“信、达、雅”：忠实原意、表达通顺、风格自然。
 3. 可适度补充中文语气连接（如“则/那/故/竟”等）以增强连贯性，但不得凭空添加信息。
 4. 对英文口语连接词（如 but/so）若仅为口头衔接，不要机械译成“但/所以/然而”。
 5. 可适度使用地道中文表达（含成语）增强本地化，但避免生硬堆砌。
 6. 字幕应尽量简洁，单行长度以“易读”为优先，理想约 15 字左右（软约束，不得因压缩而丢信息）。
 7. 标点规则：除问号、感叹号、引号外，其余标点尽量弱化处理（必要时用空格替代），保持画面阅读简洁。
 
-### Content Summary
-{summary_prompt}
+### Important notice
+你是一个追求极度忠实、语意精准的字幕翻译。你的任务是传递原文的绝对信息与原本语气，绝不允许替说话人进行文饰。在翻译过程中，禁止使用原文未提及的成语、四字词语、网络梗或垂直圈子的俗语。禁止为了追求所谓的地道而凭空创造比喻或夸张表达。原文用词直白，译文就必须直白；原文是中性描述，译文绝不能带有情绪化的渲染。宁可译文直白平淡，也绝不画蛇添足。
 
-## INPUT
-<source_subtitles>
-{source_block}
-</source_subtitles>
+  ### Content Summary
+  {summary_prompt}
 
-<draft_translation>
-{draft_block}
-</draft_translation>
+  {resume_notice}
 
-## Output in only JSON format and no other text
-仅输出 JSON，不要输出任何解释或额外文本。
-JSON 顶层键必须为字符串数字 "1" 到 "{line_count}"，每项格式如下：
-```json
-{json_format}
-```
+  ## INPUT
+  <completed_polish_reference>
+  {polished_prefix_block if polished_prefix_block else "N/A"}
+  </completed_polish_reference>
 
-Note: Start your answer with ```json and end with ```, do not add any other text.
-'''.strip()
+  <remaining_source_subtitles>
+  {remaining_source_block}
+  </remaining_source_subtitles>
+
+  <remaining_draft_translation>
+  {remaining_draft_block}
+  </remaining_draft_translation>
+
+  ## Output Format
+  仅输出正文，不要输出任何解释或额外文本。
+  从第 {start_line} 行开始逐行输出，每一行必须单独占一行，格式如下：
+  [{start_line}] 第{start_line}行润色结果
+  [{min(start_line + 1, line_count)}] 第{min(start_line + 1, line_count)}行润色结果
+  ...
+  [{line_count}] 第{line_count}行润色结果
+
+  再强调一次：
+  1. 只输出第 {start_line} 行到第 {line_count} 行
+  2. 不要输出第 1 行到第 {start_line - 1} 行
+  3. 不要使用 JSON
+  4. 不要使用代码块
+  5. 不要输出任何说明文字
+  '''.strip()
 
     return prompt
 

@@ -7,6 +7,9 @@ _3_1_SPLIT_BY_NLP = "output/log/split_by_nlp.txt"
 _3_2_SPLIT_BY_MEANING = "output/log/split_by_meaning.txt"
 _4_1_TERMINOLOGY = "output/log/terminology.json"
 _4_2_TRANSLATION = "output/log/translation_results.xlsx"
+_4_2_SINGLE_PASS_FULL_POLISH_PROGRESS = "output/log/single_pass_full_polish_progress.json"
+_4_2_SINGLE_PASS_FULL_POLISH_PREVIEW = "output/log/single_pass_full_polish_progress.txt"
+_4_2_SINGLE_PASS_FULL_POLISH_STREAM = "output/log/single_pass_full_polish_stream.txt"
 _5_SPLIT_SUB = "output/log/translation_results_for_subtitles.xlsx"
 _5_REMERGED = "output/log/translation_results_remerged.xlsx"
 
@@ -35,6 +38,9 @@ __all__ = [
     "_3_2_SPLIT_BY_MEANING",
     "_4_1_TERMINOLOGY",
     "_4_2_TRANSLATION",
+    "_4_2_SINGLE_PASS_FULL_POLISH_PROGRESS",
+    "_4_2_SINGLE_PASS_FULL_POLISH_PREVIEW",
+    "_4_2_SINGLE_PASS_FULL_POLISH_STREAM",
     "_5_SPLIT_SUB",
     "_5_REMERGED",
     "_8_1_AUDIO_TASK",
