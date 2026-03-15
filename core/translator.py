@@ -31,9 +31,11 @@ console = Console()
 
 POLISH_LINE_PATTERN = re.compile(r"^\s*\[(\d+)\]\s*:?[ \t]*(.*?)\s*$")
 POLISH_PROGRESS_REPORT_STEP = 20
-POLISH_PROGRESS_STATE_VERSION = 1
+POLISH_PROGRESS_STATE_VERSION = 2
 POLISH_TAIL_PLACEHOLDER = "拜拜"
 POLISH_STREAM_SNAPSHOT_INTERVAL_SEC = 0.5
+POLISH_SAFE_RESERVE_LINES = 10
+POLISH_TAIL_RESERVE_LINES = 1
 
 # 拆分文本块的函数
 def split_chunks_by_chars(chunk_size, max_i): 
@@ -124,41 +126,58 @@ def _load_single_pass_full_polish_progress_state():
 
 def _render_single_pass_full_polish_preview(
     *,
-    prefix_lines,
+    confirmed_lines,
     line_count,
     status,
-    final_line_marker_seen,
+    parsed_max_line,
+    confirmed_max_line,
+    confirm_cap_line,
+    final_line_placeholder_active,
+    final_line_placeholder_text,
     completion_reason,
 ):
-    committed_count = len(prefix_lines)
-    next_line = min(committed_count + 1, line_count + 1)
+    next_line = (
+        line_count + 1
+        if status in {"completed", "completed_with_placeholder"}
+        else min(confirmed_max_line + 1, line_count + 1)
+    )
     header_lines = [
         f"# status: {status}",
-        f"# committed: {committed_count}/{line_count}",
+        f"# parsed_max_line: {parsed_max_line}",
+        f"# confirmed_max_line: {confirmed_max_line}",
+        f"# confirm_cap_line: {confirm_cap_line}",
         f"# next_line: {next_line}",
-        f"# final_line_marker_seen: {str(bool(final_line_marker_seen)).lower()}",
+        f"# final_line_placeholder_active: {str(bool(final_line_placeholder_active)).lower()}",
         f"# completion_reason: {completion_reason or 'none'}",
         "# confirmed_lines:",
     ]
     body_lines = [
         f"[{i}] {_sanitize_single_line_text(line)}"
-        for i, line in enumerate(prefix_lines, 1)
+        for i, line in enumerate(confirmed_lines, 1)
     ]
+    if final_line_placeholder_active and line_count > 0:
+        body_lines.append(
+            f"[{line_count}] {_sanitize_single_line_text(final_line_placeholder_text or POLISH_TAIL_PLACEHOLDER)}"
+        )
     return "\n".join(header_lines + body_lines)
 
 def _persist_single_pass_full_polish_stream_snapshot(
     *,
     start_line,
     line_count,
-    committed_count,
-    final_line_marker_seen,
+    parsed_max_line,
+    confirmed_max_line,
+    confirm_cap_line,
+    final_line_placeholder_active,
     raw_content,
 ):
     header_lines = [
         f"# start_line: {start_line}",
-        f"# committed_in_this_round: {committed_count}",
+        f"# parsed_max_line: {parsed_max_line}",
+        f"# confirmed_max_line: {confirmed_max_line}",
+        f"# confirm_cap_line: {confirm_cap_line}",
         f"# target_end_line: {line_count}",
-        f"# final_line_marker_seen: {str(bool(final_line_marker_seen)).lower()}",
+        f"# final_line_placeholder_active: {str(bool(final_line_placeholder_active)).lower()}",
         "# raw_stream:",
     ]
     content = "\n".join(header_lines)
@@ -166,29 +185,28 @@ def _persist_single_pass_full_polish_stream_snapshot(
         content += "\n" + raw_content
     _atomic_write_text(_4_2_SINGLE_PASS_FULL_POLISH_STREAM, content)
 
-def _has_seen_target_line_marker(raw_content, target_line):
-    if not raw_content or target_line < 1:
-        return False
-    pattern = re.compile(
-        rf"(?:^|\n)[ \t]*\[{target_line}\](?=[ \t:：]|$)",
-        re.MULTILINE,
-    )
-    return bool(pattern.search(raw_content))
-
 def _persist_single_pass_full_polish_progress_state(
     *,
     src_lines,
     draft_lines,
-    polished_prefix_lines,
+    polished_lines,
     summary_prompt,
+    parsed_max_line,
+    confirmed_max_line,
+    confirm_cap_line,
     status="in_progress",
-    final_line_marker_seen=False,
+    final_line_placeholder_active=False,
+    final_line_placeholder_text=None,
     completion_reason=None,
 ):
-    polished_prefix_lines = [
-        _sanitize_single_line_text(line) for line in polished_prefix_lines
+    normalized_polished_lines = [
+        _sanitize_single_line_text(line) for line in polished_lines
     ]
     draft_lines = [_sanitize_single_line_text(line) for line in draft_lines]
+    confirmed_max_line = max(0, min(int(confirmed_max_line), len(src_lines)))
+    parsed_max_line = max(0, min(int(parsed_max_line), len(src_lines)))
+    confirm_cap_line = max(0, min(int(confirm_cap_line), len(src_lines)))
+    confirmed_lines = normalized_polished_lines[:confirmed_max_line]
     state = {
         "version": POLISH_PROGRESS_STATE_VERSION,
         "status": status,
@@ -197,20 +215,29 @@ def _persist_single_pass_full_polish_progress_state(
         "draft_hash": _hash_lines(draft_lines),
         "summary_hash": _hash_text(summary_prompt),
         "updated_at": int(time.time()),
-        "committed_count": len(polished_prefix_lines),
+        "parsed_max_line": parsed_max_line,
+        "confirmed_max_line": confirmed_max_line,
+        "confirm_cap_line": confirm_cap_line,
         "base_draft_lines": draft_lines,
-        "polished_prefix_lines": polished_prefix_lines,
-        "final_line_marker_seen": bool(final_line_marker_seen),
+        "confirmed_lines": confirmed_lines,
+        "final_line_placeholder_active": bool(final_line_placeholder_active),
+        "final_line_placeholder_text": _sanitize_single_line_text(
+            final_line_placeholder_text or POLISH_TAIL_PLACEHOLDER
+        ),
         "completion_reason": completion_reason,
     }
     _atomic_write_json(_4_2_SINGLE_PASS_FULL_POLISH_PROGRESS, state)
     _atomic_write_text(
         _4_2_SINGLE_PASS_FULL_POLISH_PREVIEW,
         _render_single_pass_full_polish_preview(
-            prefix_lines=polished_prefix_lines,
+            confirmed_lines=confirmed_lines,
             line_count=len(src_lines),
             status=status,
-            final_line_marker_seen=final_line_marker_seen,
+            parsed_max_line=parsed_max_line,
+            confirmed_max_line=confirmed_max_line,
+            confirm_cap_line=confirm_cap_line,
+            final_line_placeholder_active=final_line_placeholder_active,
+            final_line_placeholder_text=final_line_placeholder_text,
             completion_reason=completion_reason,
         ),
     )
@@ -224,33 +251,6 @@ def _cleanup_single_pass_full_polish_progress():
         if os.path.exists(file_path):
             os.remove(file_path)
 
-def _force_complete_single_pass_full_polish_tail(
-    *,
-    src_lines,
-    draft_lines,
-    polished_lines,
-    summary_prompt,
-    start_line,
-):
-    for i in range(start_line - 1, len(polished_lines)):
-        polished_lines[i] = POLISH_TAIL_PLACEHOLDER
-
-    _persist_single_pass_full_polish_progress_state(
-        src_lines=src_lines,
-        draft_lines=draft_lines,
-        polished_prefix_lines=polished_lines,
-        summary_prompt=summary_prompt,
-        status="completed",
-        final_line_marker_seen=True,
-        completion_reason="forced_tail_placeholder",
-    )
-    console.print(
-        f"[yellow]Final line marker detected earlier. "
-        f"Filled lines {start_line}-{len(polished_lines)} with placeholder `{POLISH_TAIL_PLACEHOLDER}` "
-        "and marked full-text polish as completed.[/yellow]"
-    )
-    return polished_lines
-
 def _restore_single_pass_full_polish_progress(src_lines, draft_lines, summary_prompt):
     state = _load_single_pass_full_polish_progress_state()
     line_count = len(src_lines)
@@ -261,10 +261,13 @@ def _restore_single_pass_full_polish_progress(src_lines, draft_lines, summary_pr
         _persist_single_pass_full_polish_progress_state(
             src_lines=src_lines,
             draft_lines=clean_draft_lines,
-            polished_prefix_lines=[],
+            polished_lines=clean_draft_lines,
             summary_prompt=summary_prompt,
+            parsed_max_line=0,
+            confirmed_max_line=0,
+            confirm_cap_line=0,
             status="in_progress",
-            final_line_marker_seen=False,
+            final_line_placeholder_active=False,
         )
         return {
             "draft_lines": clean_draft_lines,
@@ -272,6 +275,11 @@ def _restore_single_pass_full_polish_progress(src_lines, draft_lines, summary_pr
             "next_line": 1,
             "resumed": False,
             "completed": False,
+            "parsed_max_line": 0,
+            "confirmed_max_line": 0,
+            "confirm_cap_line": 0,
+            "final_line_placeholder_active": False,
+            "completion_reason": None,
         }
 
     if state.get("version") != POLISH_PROGRESS_STATE_VERSION:
@@ -282,19 +290,41 @@ def _restore_single_pass_full_polish_progress(src_lines, draft_lines, summary_pr
         console.print("[yellow]Single-pass polish progress source mismatch; starting a new session.[/yellow]")
     else:
         saved_draft_lines = state.get("base_draft_lines") or []
-        saved_prefix_lines = state.get("polished_prefix_lines") or []
-        saved_prefix_lines = [
-            _sanitize_single_line_text(line) for line in saved_prefix_lines[:line_count]
+        saved_confirmed_lines = state.get("confirmed_lines") or []
+        saved_confirmed_lines = [
+            _sanitize_single_line_text(line) for line in saved_confirmed_lines[:line_count]
         ]
         saved_draft_lines = [
             _sanitize_single_line_text(line) for line in saved_draft_lines[:line_count]
         ]
         if len(saved_draft_lines) == line_count:
-            committed_count = len(saved_prefix_lines)
             polished_lines = saved_draft_lines.copy()
-            polished_lines[:committed_count] = saved_prefix_lines
-            final_line_marker_seen = bool(state.get("final_line_marker_seen"))
+            confirmed_max_line = max(
+                0,
+                min(
+                    int(state.get("confirmed_max_line", len(saved_confirmed_lines))),
+                    len(saved_confirmed_lines),
+                    line_count,
+                ),
+            )
+            polished_lines[:confirmed_max_line] = saved_confirmed_lines[:confirmed_max_line]
+            parsed_max_line = max(
+                confirmed_max_line,
+                min(int(state.get("parsed_max_line", confirmed_max_line)), line_count),
+            )
+            confirm_cap_line = max(
+                confirmed_max_line,
+                min(int(state.get("confirm_cap_line", confirmed_max_line)), line_count),
+            )
+            final_line_placeholder_active = bool(state.get("final_line_placeholder_active"))
+            final_line_placeholder_text = _sanitize_single_line_text(
+                state.get("final_line_placeholder_text", POLISH_TAIL_PLACEHOLDER)
+            )
             completion_reason = state.get("completion_reason")
+            status = state.get("status", "in_progress")
+
+            if final_line_placeholder_active and line_count > 0:
+                polished_lines[-1] = final_line_placeholder_text
 
             if _hash_lines(clean_draft_lines) != state.get("draft_hash"):
                 console.print(
@@ -302,41 +332,30 @@ def _restore_single_pass_full_polish_progress(src_lines, draft_lines, summary_pr
                     "Resuming from the saved draft instead of the newly generated draft.[/yellow]"
                 )
 
-            next_line = committed_count + 1
-            if final_line_marker_seen and next_line <= line_count:
-                polished_lines = _force_complete_single_pass_full_polish_tail(
-                    src_lines=src_lines,
-                    draft_lines=saved_draft_lines,
-                    polished_lines=polished_lines,
-                    summary_prompt=summary_prompt,
-                    start_line=next_line,
-                )
+            completed = status in {"completed", "completed_with_placeholder"}
+            if completed:
+                if status == "completed_with_placeholder":
+                    console.print(
+                        "[yellow]Single-pass full polish progress already completed with placeholder final line. "
+                        "Reusing saved result.[/yellow]"
+                    )
                 return {
                     "draft_lines": saved_draft_lines,
                     "polished_lines": polished_lines,
                     "next_line": line_count + 1,
                     "resumed": True,
                     "completed": True,
-                    "completion_reason": "forced_tail_placeholder",
-                }
-
-            if next_line > line_count:
-                if completion_reason == "forced_tail_placeholder":
-                    console.print(
-                        "[yellow]Single-pass full polish progress already contains forced tail placeholders. "
-                        "Reusing saved result.[/yellow]"
-                    )
-                return {
-                    "draft_lines": saved_draft_lines,
-                    "polished_lines": polished_lines,
-                    "next_line": next_line,
-                    "resumed": True,
-                    "completed": True,
+                    "parsed_max_line": parsed_max_line,
+                    "confirmed_max_line": confirmed_max_line,
+                    "confirm_cap_line": confirm_cap_line,
+                    "final_line_placeholder_active": final_line_placeholder_active,
                     "completion_reason": completion_reason,
                 }
 
+            next_line = confirmed_max_line + 1
             console.print(
-                f"[cyan]Resuming single-pass full polish with {committed_count}/{line_count} confirmed lines. "
+                f"[cyan]Resuming single-pass full polish with confirmed={confirmed_max_line}/{line_count}, "
+                f"parsed={parsed_max_line}, cap={confirm_cap_line}. "
                 f"Continuing from line {next_line} "
                 f"using {_4_2_SINGLE_PASS_FULL_POLISH_PREVIEW}.[/cyan]"
             )
@@ -346,6 +365,10 @@ def _restore_single_pass_full_polish_progress(src_lines, draft_lines, summary_pr
                 "next_line": next_line,
                 "resumed": True,
                 "completed": False,
+                "parsed_max_line": parsed_max_line,
+                "confirmed_max_line": confirmed_max_line,
+                "confirm_cap_line": confirm_cap_line,
+                "final_line_placeholder_active": final_line_placeholder_active,
                 "completion_reason": completion_reason,
             }
 
@@ -354,10 +377,13 @@ def _restore_single_pass_full_polish_progress(src_lines, draft_lines, summary_pr
     _persist_single_pass_full_polish_progress_state(
         src_lines=src_lines,
         draft_lines=clean_draft_lines,
-        polished_prefix_lines=[],
+        polished_lines=clean_draft_lines,
         summary_prompt=summary_prompt,
+        parsed_max_line=0,
+        confirmed_max_line=0,
+        confirm_cap_line=0,
         status="in_progress",
-        final_line_marker_seen=False,
+        final_line_placeholder_active=False,
     )
     return {
         "draft_lines": clean_draft_lines,
@@ -365,6 +391,10 @@ def _restore_single_pass_full_polish_progress(src_lines, draft_lines, summary_pr
         "next_line": 1,
         "resumed": False,
         "completed": False,
+        "parsed_max_line": 0,
+        "confirmed_max_line": 0,
+        "confirm_cap_line": 0,
+        "final_line_placeholder_active": False,
         "completion_reason": None,
     }
 
@@ -558,6 +588,18 @@ def _parse_polish_stream_lines(raw_content, start_line, end_line, allow_last_wit
 
     return contiguous_lines
 
+def _compute_confirm_cap_line(parsed_max_line, confirmed_max_line, line_count):
+    if line_count <= 0:
+        return 0
+
+    tail_trigger_line = max(0, line_count - POLISH_SAFE_RESERVE_LINES)
+    reserve = (
+        POLISH_TAIL_RESERVE_LINES
+        if confirmed_max_line >= tail_trigger_line
+        else POLISH_SAFE_RESERVE_LINES
+    )
+    return max(0, min(line_count - 1, parsed_max_line - reserve))
+
 def _commit_polish_stream_progress(
     raw_content,
     polished_lines,
@@ -567,7 +609,9 @@ def _commit_polish_stream_progress(
     start_line,
     end_line,
     committed_count,
-    final_line_marker_seen,
+    parsed_max_line_before,
+    confirm_cap_line_before,
+    final_line_placeholder_active,
     allow_last_without_newline=False,
 ):
     parsed_lines = _parse_polish_stream_lines(
@@ -576,20 +620,126 @@ def _commit_polish_stream_progress(
         end_line,
         allow_last_without_newline=allow_last_without_newline,
     )
-    new_lines = parsed_lines[committed_count:]
-    for line_no, polished_text in new_lines:
+    line_count = len(src_lines)
+    parsed_count = len(parsed_lines)
+    parsed_max_line = start_line + parsed_count - 1 if parsed_count else start_line - 1
+    confirmed_max_line = start_line - 1 + committed_count
+    confirm_cap_line = _compute_confirm_cap_line(
+        parsed_max_line=parsed_max_line,
+        confirmed_max_line=confirmed_max_line,
+        line_count=line_count,
+    )
+    parsed_map = {line_no: polished_text for line_no, polished_text in parsed_lines}
+
+    for line_no in range(confirmed_max_line + 1, confirm_cap_line + 1):
+        polished_text = parsed_map.get(line_no)
+        if polished_text is None:
+            break
         polished_lines[line_no - 1] = polished_text
         console.print(f"[green][{line_no}][/green] {polished_text}")
+        confirmed_max_line = line_no
+        committed_count = max(0, confirmed_max_line - start_line + 1)
         _persist_single_pass_full_polish_progress_state(
             src_lines=src_lines,
             draft_lines=draft_lines,
-            polished_prefix_lines=polished_lines[:line_no],
+            polished_lines=polished_lines,
             summary_prompt=summary_prompt,
-            status="completed" if line_no == len(src_lines) else "in_progress",
-            final_line_marker_seen=final_line_marker_seen,
+            parsed_max_line=parsed_max_line,
+            confirmed_max_line=confirmed_max_line,
+            confirm_cap_line=confirm_cap_line,
+            status="in_progress",
+            final_line_placeholder_active=final_line_placeholder_active,
             completion_reason=None,
         )
-    return len(new_lines), len(parsed_lines)
+
+    completion_reason = None
+    status = "in_progress"
+
+    if (
+        line_count > 0
+        and not final_line_placeholder_active
+        and confirmed_max_line >= line_count - 1
+    ):
+        polished_lines[line_count - 1] = POLISH_TAIL_PLACEHOLDER
+        final_line_placeholder_active = True
+        status = "completed_with_placeholder"
+        completion_reason = "final_line_placeholder"
+        console.print(
+            f"[yellow]Confirmed line {line_count - 1}. "
+            f"Pre-wrote fallback for final line {line_count}: `{POLISH_TAIL_PLACEHOLDER}`.[/yellow]"
+        )
+        _persist_single_pass_full_polish_progress_state(
+            src_lines=src_lines,
+            draft_lines=draft_lines,
+            polished_lines=polished_lines,
+            summary_prompt=summary_prompt,
+            parsed_max_line=parsed_max_line,
+            confirmed_max_line=confirmed_max_line,
+            confirm_cap_line=confirm_cap_line,
+            status=status,
+            final_line_placeholder_active=True,
+            final_line_placeholder_text=POLISH_TAIL_PLACEHOLDER,
+            completion_reason=completion_reason,
+        )
+
+    if line_count > 0 and parsed_max_line >= line_count:
+        final_text = parsed_map.get(line_count)
+        if final_text:
+            polished_lines[line_count - 1] = final_text
+            if final_line_placeholder_active:
+                console.print(
+                    f"[green][{line_count}][/green] {final_text} [dim](overrode placeholder)[/dim]"
+                )
+            else:
+                console.print(f"[green][{line_count}][/green] {final_text}")
+            final_line_placeholder_active = False
+            confirmed_max_line = line_count
+            committed_count = max(0, confirmed_max_line - start_line + 1)
+            confirm_cap_line = max(confirm_cap_line, line_count)
+            status = "completed"
+            completion_reason = "completed"
+            _persist_single_pass_full_polish_progress_state(
+                src_lines=src_lines,
+                draft_lines=draft_lines,
+                polished_lines=polished_lines,
+                summary_prompt=summary_prompt,
+                parsed_max_line=parsed_max_line,
+                confirmed_max_line=confirmed_max_line,
+                confirm_cap_line=confirm_cap_line,
+                status=status,
+                final_line_placeholder_active=False,
+                completion_reason=completion_reason,
+            )
+
+    if status == "in_progress":
+        state_changed = (
+            parsed_max_line != parsed_max_line_before
+            or confirm_cap_line != confirm_cap_line_before
+        )
+        if state_changed:
+            _persist_single_pass_full_polish_progress_state(
+                src_lines=src_lines,
+                draft_lines=draft_lines,
+                polished_lines=polished_lines,
+                summary_prompt=summary_prompt,
+                parsed_max_line=parsed_max_line,
+                confirmed_max_line=confirmed_max_line,
+                confirm_cap_line=confirm_cap_line,
+                status=status,
+                final_line_placeholder_active=final_line_placeholder_active,
+                completion_reason=None,
+            )
+
+    return {
+        "committed": committed_count,
+        "parsed_count": parsed_count,
+        "parsed_max_line": parsed_max_line,
+        "confirmed_max_line": confirmed_max_line,
+        "confirm_cap_line": confirm_cap_line,
+        "final_line_placeholder_active": final_line_placeholder_active,
+        "status": status,
+        "completion_reason": completion_reason,
+    }
 
 def _log_single_pass_full_polish_round(
     request_settings,
@@ -635,7 +785,9 @@ def _run_single_pass_full_polish_round(
     last_stream_snapshot_at = 0.0
     finish_reason = None
     error = None
-    final_line_marker_seen = False
+    parsed_max_line = start_line - 1
+    confirm_cap_line = start_line - 1
+    final_line_placeholder_active = False
 
     def persist_stream_snapshot(force=False):
         nonlocal last_stream_snapshot_at
@@ -645,8 +797,10 @@ def _run_single_pass_full_polish_round(
         _persist_single_pass_full_polish_stream_snapshot(
             start_line=start_line,
             line_count=line_count,
-            committed_count=committed_count,
-            final_line_marker_seen=final_line_marker_seen,
+            parsed_max_line=parsed_max_line,
+            confirmed_max_line=start_line - 1 + committed_count,
+            confirm_cap_line=confirm_cap_line,
+            final_line_placeholder_active=final_line_placeholder_active,
             raw_content=raw_content,
         )
         last_stream_snapshot_at = now
@@ -665,29 +819,13 @@ def _run_single_pass_full_polish_round(
         last_reported_count = committed_count
 
     def on_delta(text):
-        nonlocal raw_content, committed_count, final_line_marker_seen
+        nonlocal raw_content, committed_count, parsed_max_line, confirm_cap_line, final_line_placeholder_active
         raw_content += text
-        if not final_line_marker_seen and _has_seen_target_line_marker(raw_content, line_count):
-            final_line_marker_seen = True
-            _persist_single_pass_full_polish_progress_state(
-                src_lines=src_lines,
-                draft_lines=draft_lines,
-                polished_prefix_lines=polished_lines[: start_line + committed_count - 1],
-                summary_prompt=summary_prompt,
-                status="in_progress",
-                final_line_marker_seen=True,
-                completion_reason=None,
-            )
-            console.print(
-                f"[yellow]Detected final line marker [{line_count}] in streaming output. "
-                "If the stream dies now, the remaining tail will be force-completed on resume.[/yellow]"
-            )
-            persist_stream_snapshot(force=True)
         if "\n" not in text:
             persist_stream_snapshot(force=False)
             return
 
-        _, parsed_count = _commit_polish_stream_progress(
+        progress_state = _commit_polish_stream_progress(
             raw_content,
             polished_lines,
             draft_lines,
@@ -696,10 +834,15 @@ def _run_single_pass_full_polish_round(
             start_line,
             line_count,
             committed_count,
-            final_line_marker_seen,
+            parsed_max_line,
+            confirm_cap_line,
+            final_line_placeholder_active,
             allow_last_without_newline=False,
         )
-        committed_count = parsed_count
+        committed_count = progress_state["committed"]
+        parsed_max_line = progress_state["parsed_max_line"]
+        confirm_cap_line = progress_state["confirm_cap_line"]
+        final_line_placeholder_active = progress_state["final_line_placeholder_active"]
         report_progress(force=False)
         persist_stream_snapshot(force=True)
 
@@ -711,7 +854,7 @@ def _run_single_pass_full_polish_round(
     except Exception as exc:
         error = exc
     finally:
-        _, parsed_count = _commit_polish_stream_progress(
+        progress_state = _commit_polish_stream_progress(
             raw_content,
             polished_lines,
             draft_lines,
@@ -720,20 +863,15 @@ def _run_single_pass_full_polish_round(
             start_line,
             line_count,
             committed_count,
-            final_line_marker_seen,
+            parsed_max_line,
+            confirm_cap_line,
+            final_line_placeholder_active,
             allow_last_without_newline=error is None,
         )
-        committed_count = parsed_count
-        if final_line_marker_seen and start_line + committed_count - 1 < line_count:
-            first_unfinished_line = start_line + committed_count
-            polished_lines = _force_complete_single_pass_full_polish_tail(
-                src_lines=src_lines,
-                draft_lines=draft_lines,
-                polished_lines=polished_lines,
-                summary_prompt=summary_prompt,
-                start_line=first_unfinished_line,
-            )
-            committed_count = line_count - start_line + 1
+        committed_count = progress_state["committed"]
+        parsed_max_line = progress_state["parsed_max_line"]
+        confirm_cap_line = progress_state["confirm_cap_line"]
+        final_line_placeholder_active = progress_state["final_line_placeholder_active"]
         persist_stream_snapshot(force=True)
         report_progress(force=True)
         _log_single_pass_full_polish_round(
@@ -747,8 +885,14 @@ def _run_single_pass_full_polish_round(
             error=error,
         )
 
+    if final_line_placeholder_active:
+        committed_count = line_count - start_line + 1
+
     return {
         "committed": committed_count,
+        "parsed_max_line": parsed_max_line,
+        "confirm_cap_line": confirm_cap_line,
+        "final_line_placeholder_active": final_line_placeholder_active,
         "finish_reason": finish_reason,
         "error": error,
     }
