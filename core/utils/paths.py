@@ -11,7 +11,6 @@ _4_2_SINGLE_PASS_FULL_POLISH_PROGRESS = "output/log/single_pass_full_polish_prog
 _4_2_SINGLE_PASS_FULL_POLISH_PREVIEW = "output/log/single_pass_full_polish_progress.txt"
 _4_2_SINGLE_PASS_FULL_POLISH_STREAM = "output/log/single_pass_full_polish_stream.txt"
 _5_SPLIT_SUB = "output/log/translation_results_for_subtitles.xlsx"
-_5_REMERGED = "output/log/translation_results_remerged.xlsx"
 
 _8_1_AUDIO_TASK = "output/audio/tts_tasks.xlsx"
 
@@ -42,7 +41,6 @@ __all__ = [
     "_4_2_SINGLE_PASS_FULL_POLISH_PREVIEW",
     "_4_2_SINGLE_PASS_FULL_POLISH_STREAM",
     "_5_SPLIT_SUB",
-    "_5_REMERGED",
     "_8_1_AUDIO_TASK",
     "_OUTPUT_DIR",
     "_AUDIO_DIR",

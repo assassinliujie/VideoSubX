@@ -62,7 +62,6 @@ def split_align_subs(src_lines: List[str], tr_lines: List[str]):
     subtitle_set = load_key("subtitle")
     MAX_SUB_LENGTH = subtitle_set["max_length"]
     TARGET_SUB_MULTIPLIER = subtitle_set["target_multiplier"]
-    remerged_tr_lines = tr_lines.copy()
     
     to_split = []
     for i, (src, tr) in enumerate(zip(src_lines, tr_lines)):
@@ -95,20 +94,17 @@ def split_align_subs(src_lines: List[str], tr_lines: List[str]):
         split_src = split_sentence(src_lines[i], num_parts=2).strip()
 
         if mode == "split+align_translation":
-            src_parts, tr_parts, tr_remerged = align_subs(src_lines[i], tr_lines[i], split_src)
+            src_parts, tr_parts, _ = align_subs(src_lines[i], tr_lines[i], split_src)
         elif mode == "split_source_only":
             src_parts = [part.strip() for part in split_src.split("\n") if str(part).strip()]
             if not src_parts:
                 src_parts = [str(src_lines[i]).strip()]
             tr_parts = [str(tr_lines[i]).strip()] * len(src_parts)
-            # Keep remerged translation as a single line for the audio chain.
-            tr_remerged = str(tr_lines[i]).strip()
         else:
             raise ValueError(f"Unsupported split mode: {mode}")
 
         src_lines[i] = src_parts
         tr_lines[i] = tr_parts
-        remerged_tr_lines[i] = tr_remerged
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=load_key("max_workers")) as executor:
         executor.map(process, to_split)
@@ -117,7 +113,7 @@ def split_align_subs(src_lines: List[str], tr_lines: List[str]):
     src_lines = [item for sublist in src_lines for item in (sublist if isinstance(sublist, list) else [sublist])]
     tr_lines = [item for sublist in tr_lines for item in (sublist if isinstance(sublist, list) else [sublist])]
     
-    return src_lines, tr_lines, remerged_tr_lines
+    return src_lines, tr_lines
 
 def split_for_sub_main():
     console.print("[bold green]🚀 Start splitting subtitles...[/bold green]")
@@ -132,7 +128,7 @@ def split_for_sub_main():
     
     for attempt in range(3):  # 多次切割
         console.print(Panel(f"🔄 Split attempt {attempt + 1}", expand=False))
-        split_src, split_trans, remerged = split_align_subs(src.copy(), trans)
+        split_src, split_trans = split_align_subs(src.copy(), trans)
         
         # 检查是否所有字幕都符合长度要求
         if all(len(src) <= MAX_SUB_LENGTH for src in split_src) and \
@@ -142,14 +138,7 @@ def split_for_sub_main():
         # 更新源数据继续下一轮分割
         src, trans = split_src, split_trans
 
-    # 确保二者有相同的长度，防止报错
-    if len(src) > len(remerged):
-        remerged += [None] * (len(src) - len(remerged))
-    elif len(remerged) > len(src):
-        src += [None] * (len(remerged) - len(src))
-    
     pd.DataFrame({'Source': split_src, 'Translation': split_trans}).to_excel(_5_SPLIT_SUB, index=False)
-    pd.DataFrame({'Source': src, 'Translation': remerged}).to_excel(_5_REMERGED, index=False)
 
 if __name__ == '__main__':
     split_for_sub_main()
