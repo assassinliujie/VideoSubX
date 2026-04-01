@@ -21,6 +21,18 @@ from typing import List, Tuple
 from rich import print as rprint
 from core.utils import load_key
 
+MAX_WORD_CENTER_SHIFT_SEC = 0.5
+
+def _load_mfa_config(key: str, default):
+    try:
+        value = load_key(key)
+    except Exception:
+        return default
+
+    if value in (None, ""):
+        return default
+    return value
+
 def check_mfa_available() -> bool:
     """
     检查 MFA 是否可用
@@ -180,6 +192,18 @@ def parse_textgrid(textgrid_path: str) -> List[Tuple[str, float, float]]:
     
     return words
 
+
+def _is_center_shift_allowed(
+    original_start: float,
+    original_end: float,
+    new_start: float,
+    new_end: float,
+    max_center_shift_sec: float = MAX_WORD_CENTER_SHIFT_SEC,
+) -> bool:
+    original_center = (float(original_start) + float(original_end)) / 2.0
+    new_center = (float(new_start) + float(new_end)) / 2.0
+    return abs(new_center - original_center) <= float(max_center_shift_sec)
+
 def update_timestamps(df: pd.DataFrame, mfa_words: List[Tuple[str, float, float]]) -> pd.DataFrame:
     """
     用 MFA 时间戳更新 DataFrame
@@ -203,6 +227,7 @@ def update_timestamps(df: pd.DataFrame, mfa_words: List[Tuple[str, float, float]
     mfa_lower = [(w.lower(), s, e) for w, s, e in mfa_words]
     
     updated_count = 0
+    rejected_count = 0
     mfa_idx = 0
     
     for i, row in df.iterrows():
@@ -210,31 +235,42 @@ def update_timestamps(df: pd.DataFrame, mfa_words: List[Tuple[str, float, float]
             break
         
         stable_word = row['clean_text']
-        mfa_word, mfa_start, mfa_end = mfa_lower[mfa_idx]
-        
-        # 精确匹配或近似匹配
-        if stable_word == mfa_word or stable_word in mfa_word or mfa_word in stable_word:
-            df.at[i, 'start'] = mfa_start
-            df.at[i, 'end'] = mfa_end
-            updated_count += 1
-            mfa_idx += 1
-        else:
-            # 尝试跳过 MFA 中的短词（如标点）
-            skip_count = 0
-            while mfa_idx + skip_count < len(mfa_lower) and skip_count < 3:
-                check_word, check_start, check_end = mfa_lower[mfa_idx + skip_count]
-                if stable_word == check_word or stable_word in check_word or check_word in stable_word:
+        original_start = float(row['start'])
+        original_end = float(row['end'])
+
+        matched = False
+        for skip_count in range(4):
+            if mfa_idx + skip_count >= len(mfa_lower):
+                break
+
+            check_word, check_start, check_end = mfa_lower[mfa_idx + skip_count]
+            if stable_word == check_word or stable_word in check_word or check_word in stable_word:
+                if _is_center_shift_allowed(
+                    original_start=original_start,
+                    original_end=original_end,
+                    new_start=check_start,
+                    new_end=check_end,
+                ):
                     df.at[i, 'start'] = check_start
                     df.at[i, 'end'] = check_end
                     updated_count += 1
                     mfa_idx = mfa_idx + skip_count + 1
+                    matched = True
                     break
-                skip_count += 1
+
+                rejected_count += 1
+                break
+
+        if not matched:
+            continue
     
     # 清理临时列
     df = df.drop(columns=['clean_text'])
     
-    rprint(f"[green]✅ MFA 时间戳更新: {updated_count}/{len(df)} 个词[/green]")
+    rprint(
+        f"[green]✅ MFA 时间戳更新: {updated_count}/{len(df)} 个词[/green]"
+        + (f" [yellow](rejected by center clamp: {rejected_count})[/yellow]" if rejected_count else "")
+    )
     
     return df
 
@@ -261,8 +297,8 @@ def align_transcription(df: pd.DataFrame, audio_file: str) -> pd.DataFrame:
         return df
     
     # 读取配置
-    acoustic_model = load_key("mfa.acoustic_model") or "english_mfa"
-    dictionary = load_key("mfa.dictionary") or "english_mfa"
+    acoustic_model = _load_mfa_config("mfa.acoustic_model", "english_mfa")
+    dictionary = _load_mfa_config("mfa.dictionary", "english_mfa")
     
     # 创建临时工作目录
     work_dir = tempfile.mkdtemp(prefix='mfa_')

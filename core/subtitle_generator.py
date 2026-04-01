@@ -50,11 +50,6 @@ Style: 中,{chinese_font},{font_size},&H00FFFFFF,&H000000FF,&H00200090,&H0000000
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-AUDIO_SUBTITLE_OUTPUT_CONFIGS = [
-    ('src_subs_for_audio.srt', ['Source']),
-    ('trans_subs_for_audio.srt', ['Translation'])
-]
-
 def convert_to_srt_format(start_time, end_time):
     """Convert time (in seconds) to the format: hours:minutes:seconds,milliseconds"""
     def seconds_to_hmsm(seconds):
@@ -161,7 +156,7 @@ def show_difference(str1, str2):
 
 def get_sentence_timestamps(df_words, df_sentences):
     time_stamp_list = []
-    
+
     # Build complete string and position mapping
     full_words_str = ''
     position_to_word_idx = {}
@@ -200,17 +195,18 @@ def get_sentence_timestamps(df_words, df_sentences):
                           full_words_str[current_pos:current_pos+len(clean_sentence)])
             print("\nOriginal sentence:", df_sentences['Source'][idx])
             raise ValueError("❎ No match found for sentence.")
-    
+
     return time_stamp_list
 
-def align_timestamp(df_text, df_translate, subtitle_output_configs: list, output_dir: str, for_display: bool = True):
+def align_timestamp(
+    df_text,
+    df_translate,
+    subtitle_output_configs: list,
+    output_dir: str,
+    for_display: bool = True,
+):
     """Align timestamps and add a new timestamp column to df_translate"""
     df_trans_time = df_translate.copy()
-
-    # Assign an ID to each word in df_text['text'] and create a new DataFrame
-    words = df_text['text'].str.split(expand=True).stack().reset_index(level=1, drop=True).reset_index()
-    words.columns = ['id', 'word']
-    words['id'] = words['id'].astype(int)
 
     # Process timestamps ⏰
     time_stamp_list = get_sentence_timestamps(df_text, df_translate)
@@ -329,13 +325,6 @@ def align_timestamp_main():
     
     align_timestamp(df_text, df_translate, SUBTITLE_OUTPUT_CONFIGS, _OUTPUT_DIR)
     console.print(Panel("[bold green]🎉📝 Subtitles generation completed! Please check in the `output` folder 👀[/bold green]"))
-
-    # for audio
-    df_translate_for_audio = pd.read_excel(_5_REMERGED) # use remerged file to avoid unmatched lines when dubbing
-    df_translate_for_audio['Translation'] = df_translate_for_audio['Translation'].apply(clean_translation)
-    
-    align_timestamp(df_text, df_translate_for_audio, AUDIO_SUBTITLE_OUTPUT_CONFIGS, _AUDIO_DIR)
-    console.print(Panel(f"[bold green]🎉📝 Audio subtitles generation completed! Please check in the `{_AUDIO_DIR}` folder 👀[/bold green]"))
     
 
 if __name__ == '__main__':
