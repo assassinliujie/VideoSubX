@@ -7,6 +7,6 @@ if %errorlevel% neq 0 (
 )
 
 echo Starting VideoSubX WebUI...
-python -m uvicorn main:app --host 0.0.0.0 --port 8501 --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 28502 --reload
 
 pause
