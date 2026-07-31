@@ -48,13 +48,39 @@ def find_split_positions(original, modified):
 def split_sentence(sentence, num_parts, word_limit=20, index=-1, retry_attempt=0):
     """Split a long sentence using GPT and return the result as a string."""
     split_prompt = get_split_prompt(sentence, num_parts, word_limit)
+
     def valid_split(response_data):
         if not isinstance(response_data, dict) or "split" not in response_data:
             return {"status": "error", "message": "Missing required key: `split`"}
         if not isinstance(response_data["split"], str):
             return {"status": "error", "message": "Invalid value for `split`: expected a string"}
-        if "[br]" not in response_data["split"]:
+        split_text = response_data["split"]
+        if "[br]" not in split_text:
             return {"status": "error", "message": "Split failed, no [br] found"}
+
+        parts = split_text.split("[br]")
+        if any(not part.strip() for part in parts):
+            return {"status": "error", "message": "Split contains an empty part"}
+
+        original_text = " ".join(str(sentence).split())
+        returned_text = " ".join("".join(parts).split())
+        if returned_text != original_text:
+            matcher = SequenceMatcher(None, original_text, returned_text)
+            changed_characters = sum(
+                max(original_end - original_start, returned_end - returned_start)
+                for tag, original_start, original_end, returned_start, returned_end
+                in matcher.get_opcodes()
+                if tag != "equal"
+            )
+            if changed_characters > 2 or matcher.ratio() < 0.96:
+                return {
+                    "status": "error",
+                    "message": (
+                        "Split changed the source text beyond the allowed tolerance: "
+                        f"changed_characters={changed_characters}"
+                    ),
+                }
+
         return {"status": "success", "message": "Split completed"}
     
     response_data = ask_gpt(split_prompt + " " * retry_attempt, resp_type='json', valid_def=valid_split, log_title='split_by_meaning')

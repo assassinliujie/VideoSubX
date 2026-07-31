@@ -14,7 +14,7 @@ from core.utils.paths import *
 console = Console()
 
 SUBTITLE_SPLIT_DECISIONS = "output/log/subtitle_split_decisions.xlsx"
-TARGET_ALIGNMENT_BATCH_SIZE = 20
+TARGET_ALIGNMENT_BATCH_SIZE = 5
 TARGET_BOUNDARY_PUNCTUATION = set("，。！？；：,.!?;:…")
 TARGET_BOUNDARY_CLOSERS = set("」』】）》〉〕”’)]}")
 
@@ -285,16 +285,44 @@ def _validate_target_alignment_response(response_data, expected_items):
 
 def align_subs(src_sub: str, tr_sub: str, src_part: str) -> Tuple[List[str], List[str], str]:
     align_prompt = get_align_prompt(src_sub, tr_sub, src_part)
+    src_parts = src_part.split('\n')
+    expected_part_count = len(src_parts)
+
+    if expected_part_count < 2:
+        raise ValueError("Source subtitle split must contain at least two parts")
     
     def valid_align(response_data):
-        if 'align' not in response_data:
+        if not isinstance(response_data, dict) or 'align' not in response_data:
             return {"status": "error", "message": "Missing required key: `align`"}
-        if len(response_data['align']) < 2:
-            return {"status": "error", "message": "Align does not contain more than 1 part as expected!"}
+        align_items = response_data['align']
+        if not isinstance(align_items, list):
+            return {"status": "error", "message": "`align` must be a list"}
+        if len(align_items) != expected_part_count:
+            return {
+                "status": "error",
+                "message": (
+                    "Aligned target part count mismatch: "
+                    f"expected {expected_part_count}, got {len(align_items)}"
+                ),
+            }
+
+        for index, item in enumerate(align_items, start=1):
+            target_key = f'target_part_{index}'
+            if not isinstance(item, dict) or target_key not in item:
+                return {
+                    "status": "error",
+                    "message": f"Missing required key: `{target_key}`",
+                }
+            if not isinstance(item[target_key], str) or not item[target_key].strip():
+                return {
+                    "status": "error",
+                    "message": f"`{target_key}` must be a non-empty string",
+                }
+
         return {"status": "success", "message": "Align completed"}
+
     parsed = ask_gpt(align_prompt, resp_type='json', valid_def=valid_align, log_title='align_subs')
     align_data = parsed['align']
-    src_parts = src_part.split('\n')
     tr_parts = [item[f'target_part_{i+1}'].strip() for i, item in enumerate(align_data)]
     
     whisper_language = load_key("whisper.language")
