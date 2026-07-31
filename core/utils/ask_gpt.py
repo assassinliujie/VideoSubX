@@ -146,7 +146,9 @@ def _ask_gpt_chat(prompt, resp_type, model, base_url, api_key, llm_support_json,
     return resp_content, resp
 
 
-def _ask_claude_messages(prompt, resp_type, model, base_url, api_key, llm_support_json, timeout):
+def _ask_claude_messages(
+    prompt, resp_type, model, base_url, api_key, llm_support_json, timeout, log_title="default"
+):
     url = _normalize_claude_messages_url(base_url)
     headers = {
         "x-api-key": api_key,
@@ -160,11 +162,44 @@ def _ask_claude_messages(prompt, resp_type, model, base_url, api_key, llm_suppor
     }
     # Native Claude structured output path: force a tool call that returns JSON object input.
     if resp_type == "json" and llm_support_json:
+        input_schema = {"type": "object", "additionalProperties": True}
+        if log_title == "split_by_meaning":
+            input_schema = {
+                "type": "object",
+                "properties": {"split": {"type": "string"}},
+                "required": ["split"],
+                "additionalProperties": False,
+            }
+        elif log_title == "align_target_semantics":
+            input_schema = {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "integer"},
+                                "target_parts": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["id", "target_parts"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["items"],
+                "additionalProperties": False,
+            }
         payload["tools"] = [
             {
                 "name": "output_json",
                 "description": "Return final answer as a JSON object only.",
-                "input_schema": {"type": "object", "additionalProperties": True},
+                "input_schema": input_schema,
             }
         ]
         payload["tool_choice"] = {"type": "tool", "name": "output_json"}
@@ -262,6 +297,7 @@ def ask_gpt(prompt, resp_type=None, valid_def=None, log_title="default", api_set
                     api_key=api_key,
                     llm_support_json=llm_support_json,
                     timeout=timeout,
+                    log_title=log_title,
                 )
             else:
                 resp_content, resp = _ask_gpt_chat(

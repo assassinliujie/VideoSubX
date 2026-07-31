@@ -6,50 +6,46 @@ from core.utils import *
 def get_split_prompt(sentence, num_parts = 2, word_limit = 20):
     language = load_key("whisper.detected_language")
     split_prompt = f"""
-## Role
-You are a professional Netflix subtitle splitter in **{language}**.
+## 角色
+你是一名处理 **{language}** 字幕的专业 Netflix 字幕分句专家。
 
-## Task
-Split the given subtitle text into **{num_parts}** parts, each less than **{word_limit}** words.
+## 任务
+在给定字幕原文中插入 `[br]` 标记，按照自然语义边界将文本拆成合适数量的部分。
 
-1. Maintain sentence meaning coherence according to Netflix subtitle standards, and ensure each part is a meaningful phrase/clause unit (not a dangling fragment).
-2. MOST IMPORTANT: Do not end a non-final part with dangling function words, especially prepositions/conjunctions such as: of, into, from, to, for, with, at, on, in, by, about, as, and, or.
-3. Avoid unnecessary splitting: if the sentence is already natural and does not need splitting (while still meeting length limits), prefer keeping it unsplit.
-4. Keep parts roughly equal in length (minimum 3 words each) when possible, but this is lower priority than Rule 1-3.
-5. Split at natural points like punctuation marks or conjunctions.
-6. If provided text is repeated words, simply split at the middle of the repeated words.
+长度计算给出的参考部分数为 **{num_parts}**，每个部分必须少于 **{word_limit}** 个词。实际部分数根据语义边界和长度上限确定，输出必须至少包含一个 `[br]`。
 
-### Text Fidelity Constraint (STRICT)
-1. Keep the source wording exactly as-is.
-2. Do NOT rewrite grammar, paraphrase, or "improve" intentional jokes/mistakes.
-3. Do NOT normalize colloquial spoken forms, including but not limited to: gonna, wanna, gotta, kinda, sorta, ain't, y'all.
-4. Outside `[br]`, text must be character-preserving.
+## 分句规则
+1. 遵循 Netflix 字幕标准，保持整句语义连贯。每个部分都应构成有意义且相对完整的短语、短句或分句，避免形成悬空残片。
+2. 最重要：非最后一个部分的末尾不得留下悬挂的功能词，尤其是介词或连词，例如：of、into、from、to、for、with、at、on、in、by、about、as、and、or。
+3. 普通情况下倾向拆成两个部分，并避免不必要的过度拆分。
+4. 一句话包含多个相对独立的短句或分句时，尽量在自然语义边界拆开，可以拆成三到四部分。
+5. 三到四部分属于建议范围。极长文本可以根据长度要求拆成更多部分，每个部分仍须少于 **{word_limit}** 个词。
+6. 条件允许时，各部分长度尽量均衡，每部分至少包含 3 个词。语义完整和非悬挂结尾具有更高优先级。
+7. 优先选择标点符号、连词附近或其他自然停顿位置作为断点。
+8. 输入文本由重复词组成时，在重复词序列的中间位置断开。
+9. 在满足每部分长度上限的前提下，约束发生冲突时依次保证：语义完整和非悬挂结尾、避免过度拆分、长度均衡。
 
-Priority note: If constraints conflict, prioritize semantic integrity and no-dangling-endings first, then avoid unnecessary splitting, and finally optimize length balance.
+## 原文保真约束（严格）
+1. 完整保留原文措辞。
+2. 只允许插入 `[br]`，不得增加、删除、替换或调整其他字符的顺序。
+3. 保留原文中的标点、大小写、空格和所有其他字符。
+4. 不修改语法，不进行改写、释义或润色，也不修正原文中有意保留的笑话或错误。
+5. 保留所有口语形式，包括但不限于：gonna、wanna、gotta、kinda、sorta、ain't、y'all。
+6. 除新增的 `[br]` 标记外，输出文本必须与输入文本逐字符一致。
 
-## Steps
-1. Analyze sentence structure, complexity, and splitting challenges.
-2. Generate two alternative splitting approaches with [br] tags at split positions.
-3. Compare both approaches highlighting their strengths and weaknesses.
-4. Choose the best splitting approach.
-
-## Given Text
+## 待分句文本
 <split_this_sentence>
 {sentence}
 </split_this_sentence>
 
-## Output in only JSON format and no other text
-```json
-{{
-    "analysis": "Brief description of sentence structure, complexity, and key splitting challenges",
-    "split1": "First splitting approach with [br] tags at split positions",
-    "split2": "Alternative splitting approach with [br] tags at split positions",
-    "assess": "Comparison of both approaches highlighting their strengths and weaknesses",
-    "choice": "1 or 2"
-}}
-```
+## 输出要求
+仅输出一个可解析的 JSON 对象，不使用 Markdown 代码块，不添加解释或其他文字。JSON 对象只包含必填字符串字段 `split`：
 
-Note: Start your answer with ```json and end with ```, do not add any other text.
+{{
+  "split": "在原始文本的自然断点处插入 [br] 后得到的完整文本"
+}}
+
+`split` 中必须包含一个或多个 `[br]`。
 """.strip()
     return split_prompt
 
@@ -157,11 +153,6 @@ A valid correction means:
 If no correction is needed, return `"corrections": []`.
 Note: Start your answer with ```json and end with ```, do not add any other text.
 """.strip()
-
-"""{{
-    "analysis": "Brief analysis of the text structure",
-    "split": "Complete sentence with [br] tags at split positions"
-}}"""
 
 ## ================================================================
 # @ step4_1_summarize.py
@@ -582,6 +573,192 @@ def get_prompt_single_pass_full_polish(
 
 ## ================================================================
 # @ step6_splitforsub.py
+def get_target_semantic_alignment_prompt(alignment_items):
+    source_language = load_key("whisper.detected_language")
+    target_language = load_key("target_language")
+    items_json = json.dumps(alignment_items, ensure_ascii=False, indent=2)
+
+    return f'''
+## 角色
+你是一名专业的双语字幕语义映射专家，熟悉 {source_language} 与 {target_language} 的语序差异、语义结构和字幕阅读习惯。
+
+## 任务
+给定一批字幕映射项目。每个项目包含：
+
+- `id`：项目编号。
+- `source`：完整原文。
+- `source_parts`：已经完成拆分、校验和原文映射的最终原文片段，将直接用于最终字幕时间段。
+- `target`：完整译文。
+- `target_boundary_candidates`：程序根据中文空格和标点提取的候选语义单元。这些内容只作为判断参考，候选边界可能来自正常语义停顿，也可能来自英文术语、数字或排版空格。
+
+`source_parts` 是已经确定的最终原文片段。不得重新拆分、合并、改写或调整 `source_parts`。你的唯一任务是为这些固定时间片段分配译文显示文本。
+
+请为每个 `source_parts` 元素分配一条应在对应时间段显示的译文，返回 `target_parts`。
+
+`target_parts` 的数量必须与 `source_parts` 完全相同。
+
+## 核心原则
+
+1. 默认保持完整译文。当 `target` 表达的是一个连续、完整、难以自然拆开的语义单元时，将完整 `target` 复制到每个 `source_parts` 对应位置，使观众能够在多个连续时间段内阅读同一句译文。
+
+2. 当 `target` 明确包含多个相对独立、自然完整的短句或分句，并且这些语义单元能够按照时间顺序对应 `source_parts` 时，将它们分配到相应位置。
+
+3. 中文语义单元数量无需与原文片段数量相同：
+   - 一个中文语义单元可以覆盖多个连续的原文片段，此时在这些位置重复该中文语义单元。
+   - 多个相邻中文语义单元可以合并后对应一个原文片段。
+   - 所有映射必须保持原文和译文的语义顺序。
+
+4. 只在存在明确、自然的中文语义边界时使用不同的 `target_parts`。不得为了凑齐数量而强行拆分完整短语或句子。
+
+5. `target_boundary_candidates` 仅提供候选边界：
+   - 中文与英文术语之间的空格通常不构成语义边界。
+   - 英文词组内部的空格不构成中文语义边界。
+   - 产品名称、人物名称、机构名称、型号和数字不得从中间拆开。
+   - 候选单元缺乏独立语义时，应合并或保持完整译文。
+
+6. 每个输出部分都必须自然、完整、易于单独阅读。避免产生只包含助词、介词、连词或残缺修饰语的片段。
+
+7. 允许自然短句以“并、但、而、所以、然后、同时、接着、还、又”等连接成分开头，只要该短句本身具有完整语义。
+
+8. 对应关系不明确、中文语序与原文片段难以自然对应、任何拆分都会损害表达时，将完整 `target` 复制到所有对应位置。
+
+## 译文保真约束（严格）
+
+1. 只能使用 `target` 中已有的内容，不得重新翻译。
+2. 不得改写、润色、扩写、缩写或补充信息。
+3. 不得删除有效信息，不得改变事实、语气和表达含义。
+4. 不得调整中文语义单元的顺序。
+5. 不得改变专有名词、英文术语、型号、数字和单位。
+6. 不得创造原译文中不存在的代词、连接词或解释。
+7. 输出不同语义单元时，只能在 `target_boundary_candidates` 给出的自然边界处分配或合并。
+8. 候选片段外缘的空格可以去除，其他字符应保持原样。
+9. 当同一个中文语义单元覆盖多个连续时间段时，必须逐项返回完全相同的文本。
+
+## 映射示例
+
+### 示例一：三个英文片段对应三个自然中文短句
+
+输入：
+
+{{
+  "id": 1,
+  "source": "taking the sheets off of an un-camouflaged version for the full design reveal, shot that video.",
+  "source_parts": [
+    "taking the sheets off of an un-camouflaged version",
+    "for the full design reveal,",
+    "shot that video."
+  ],
+  "target": "就是为无伪装实车掀开幕布 做完整的设计揭晓 并拍了那支视频",
+  "target_boundary_candidates": [
+    "就是为无伪装实车掀开幕布",
+    "做完整的设计揭晓",
+    "并拍了那支视频"
+  ]
+}}
+
+输出：
+
+{{
+  "id": 1,
+  "target_parts": [
+    "就是为无伪装实车掀开幕布",
+    "做完整的设计揭晓",
+    "并拍了那支视频"
+  ]
+}}
+
+### 示例二：三个英文片段共同对应一个完整中文语义单元
+
+输入：
+
+{{
+  "id": 2,
+  "source": "This is what we need to get the job done properly.",
+  "source_parts": [
+    "This is what we need",
+    "to get the job",
+    "done properly."
+  ],
+  "target": "这样才能把这件事彻底处理好",
+  "target_boundary_candidates": []
+}}
+
+输出：
+
+{{
+  "id": 2,
+  "target_parts": [
+    "这样才能把这件事彻底处理好",
+    "这样才能把这件事彻底处理好",
+    "这样才能把这件事彻底处理好"
+  ]
+}}
+
+### 示例三：三个英文片段对应两个中文语义单元
+
+输入：
+
+{{
+  "id": 3,
+  "source": "We need to inspect the data and submit the report.",
+  "source_parts": [
+    "We need",
+    "to inspect the data,",
+    "and submit the report."
+  ],
+  "target": "我们需要检查数据 然后提交报告",
+  "target_boundary_candidates": [
+    "我们需要检查数据",
+    "然后提交报告"
+  ]
+}}
+
+输出：
+
+{{
+  "id": 3,
+  "target_parts": [
+    "我们需要检查数据",
+    "我们需要检查数据",
+    "然后提交报告"
+  ]
+}}
+
+## 输入
+
+<alignment_items>
+{items_json}
+</alignment_items>
+
+## 输出要求
+
+仅输出一个可解析的 JSON 对象，不使用 Markdown 代码块，不添加分析、理由、解释或其他文字。
+
+输出格式：
+
+{{
+  "items": [
+    {{
+      "id": 1,
+      "target_parts": [
+        "对应第一个原文片段的译文",
+        "对应第二个原文片段的译文"
+      ]
+    }}
+  ]
+}}
+
+严格要求：
+
+1. 每个输入项目必须对应一个输出项目。
+2. `id` 必须与输入完全一致。
+3. 输出项目顺序必须与输入顺序一致。
+4. 每个 `target_parts` 的数量必须等于对应 `source_parts` 的数量。
+5. `target_parts` 中的每一项必须是非空字符串。
+6. JSON 对象只包含 `items`；每个项目只包含 `id` 和 `target_parts`。
+'''.strip()
+
+
 def get_align_prompt(src_sub, tr_sub, src_part):
     targ_lang = load_key("target_language")
     src_lang = load_key("whisper.detected_language")
