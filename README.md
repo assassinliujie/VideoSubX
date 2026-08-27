@@ -177,13 +177,7 @@ style:
 
 ### Base URL 填写规则（重要）
 
-`api.base_url` 必须填写服务商根地址，不要带 `/v1`，也不要在末尾加 `/`。  
-例如 OpenAI 正确写法：
-
-```yaml
-api:
-  base_url: 'https://api.openai.com'
-```
+正确写法：`https://api.openai.com/v1`。
 
 ### 3. LLM 请求超时与重试（新增）
 

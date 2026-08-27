@@ -5,9 +5,10 @@ display_language: "zh-CN"
 # API 设置（请替换为你的 API Key）
 api:
   key: 'YOUR_API_KEY_HERE'
-  # IMPORTANT: use provider root URL only. Do NOT add '/v1' and do NOT keep trailing '/'.
-  # Correct example: https://api.openai.com
-  base_url: 'https://api.openai.com'
+  # Enter the provider's complete API base URL, including its version path when required.
+  # OpenAI example: https://api.openai.com/v1
+  # Zhipu GLM example: https://open.bigmodel.cn/api/paas/v4
+  base_url: 'https://api.openai.com/v1'
   # If model contains "claude", VideoSubX will use Claude native /v1/messages mode.
   # Otherwise it uses OpenAI chat.completions mode.
   model: 'gpt-4.1'

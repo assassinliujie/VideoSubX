@@ -103,11 +103,7 @@ def _is_claude_model(model: str) -> bool:
 
 
 def _normalize_openai_base_url(base_url: str) -> str:
-    if "ark" in base_url:
-        return "https://ark.cn-beijing.volces.com/api/v3"  # huoshan base url
-    if "v1" not in base_url:
-        return base_url.strip("/") + "/v1"
-    return base_url
+    return base_url.strip().rstrip("/")
 
 
 def _normalize_claude_messages_url(base_url: str) -> str:
